@@ -80,6 +80,37 @@
                             <Run Text="{Binding MetadataVM.Metadata.Author}" />
                             </TextBlock>
                         </Grid>
+
+                        <!--  Downloaded-installer update status (only shown when a local file exists)  -->
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="0, 0, 0, 8"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding MetadataVM.ShowUpdateBadge, Converter={StaticResource bool2VisibilityConverter}}"
+                                    ToolTip="{Binding MetadataVM.UpdateStatusTooltip}">
+                            <Border CornerRadius="4" Padding="8, 3, 8, 3" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{StaticResource DarkSecondaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding MetadataVM.UpdateState}" Value="UpdateAvailable">
+                                                <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding MetadataVM.UpdateState}" Value="Unlisted">
+                                                <Setter Property="Background" Value="{StaticResource UnavailableBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding MetadataVM.UpdateStatusText}" FontSize="13" FontWeight="Bold" />
+                            </Border>
+                            <TextBlock VerticalAlignment="Center" Margin="8, 0, 0, 0" FontSize="13"
+                                       Foreground="#80FFFFFF"
+                                       Visibility="{Binding MetadataVM.UpdateAvailable, Converter={StaticResource bool2VisibilityConverter}}">
+                                <Run Text="{Binding MetadataVM.DownloadedVersionText}" />
+                                <Run Text="  →  " />
+                                <Run Text="{Binding MetadataVM.AvailableVersionText}" />
+                            </TextBlock>
+                        </StackPanel>
                         <DockPanel Margin="-4, 8, 0, 8">
                             <ItemsControl x:Name="TagsControl">
                                 <ItemsControl.ItemsPanel>

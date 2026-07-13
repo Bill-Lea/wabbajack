@@ -11,11 +11,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using JetBrains.Annotations;
 using MsBox.Avalonia.Dto;
+using MsBox.Avalonia.Models;
 using ReactiveUI;
 using ReactiveUI.Fody.Helpers;
 using Wabbajack.Common;
+using Wabbajack.Configuration;
 using Wabbajack.Downloaders.Http;
 using Wabbajack.DTOs.Logins;
 using Wabbajack.Networking.Http.Interfaces;
@@ -36,8 +39,15 @@ public class MainWindowViewModel : ViewModelBase
     private readonly NexusApi _nexusApi;
     private readonly HttpDownloader _downloader;
     private readonly ITokenProvider<NexusOAuthState> _tokenProvider;
+    private readonly MainSettings _settings;
 
-    public MainWindowViewModel(NexusApi nexusApi, HttpDownloader downloader, ITokenProvider<NexusOAuthState> tokenProvider)
+    /// <summary>Command-line flag that bypasses the update confirmation for automated runs.</summary>
+    public const string UnattendedUpdateArg = "--unattended-update";
+
+    private readonly bool _unattended = Environment.GetCommandLineArgs()
+        .Any(a => string.Equals(a, UnattendedUpdateArg, StringComparison.OrdinalIgnoreCase));
+
+    public MainWindowViewModel(NexusApi nexusApi, HttpDownloader downloader, ITokenProvider<NexusOAuthState> tokenProvider, MainSettings settings)
     {
         AppDomain.CurrentDomain.UnhandledException += async (sender, e) =>
         {
@@ -57,6 +67,7 @@ public class MainWindowViewModel : ViewModelBase
         Status = "Checking for new versions";
         _downloader = downloader;
         _tokenProvider = tokenProvider;
+        _settings = settings;
 
         this.WhenAnyValue(vm => vm.Status)
             .Buffer(2, 1)
@@ -121,6 +132,46 @@ public class MainWindowViewModel : ViewModelBase
         var baseFolder = KnownFolders.CurrentDirectory.Combine(_version.Version.ToString());
 
         if (baseFolder.Combine("Wabbajack.exe").FileExists()) await FinishAndExit();
+
+        // A newer version has been identified and no local copy of it exists yet. Decide whether to
+        // ask the user before downloading/installing it. FinishAndExit() launches the highest local
+        // version, so declining naturally continues into the currently installed version.
+        var installedVersion = GetHighestInstalledVersion();
+        var decision = ApplicationUpdateDecider.Decide(installedVersion, _version.Version,
+            _settings.AskBeforeApplicationUpdate, _unattended);
+
+        if (decision.Action == UpdateAction.NoUpdate)
+        {
+            Status = $"No newer version than {installedVersion} available; launching current version.";
+            await FinishAndExit();
+            return;
+        }
+
+        switch (decision.Reason)
+        {
+            case UpdateBypassReason.FreshInstall:
+                Status = $"No local version found; installing {_version.Version} without prompting.";
+                break;
+            case UpdateBypassReason.UnattendedFlag:
+                Status = $"Unattended update requested ({UnattendedUpdateArg}); updating to {_version.Version} without prompting.";
+                break;
+            case UpdateBypassReason.SettingDisabled:
+                Status = $"Update prompt disabled in settings; updating to {_version.Version} without prompting.";
+                break;
+        }
+
+        if (decision.Action == UpdateAction.AskUser)
+        {
+            var proceed = await PromptForUpdate(installedVersion, _version.Version);
+            if (!proceed)
+            {
+                Status = $"Update to {_version.Version} declined; launching current version.";
+                await FinishAndExit();
+                return;
+            }
+
+            Status = $"Update to {_version.Version} accepted.";
+        }
 
         Status = $"Getting download Uri for {_version.Version}";
         var uri = await _version.Uri();
@@ -206,6 +257,49 @@ public class MainWindowViewModel : ViewModelBase
         }
 
         await FinishAndExit();
+    }
+
+    /// <summary>
+    /// The highest version-named folder present in the current directory (the same set of folders
+    /// <see cref="FinishAndExit"/> launches from), or null when nothing is installed yet.
+    /// </summary>
+    private static Version? GetHighestInstalledVersion()
+    {
+        return KnownFolders.CurrentDirectory.EnumerateDirectories(recursive: false)
+            .Select(v => Version.TryParse(v.FileName.ToString(), out var ver) ? ver : null)
+            .Where(v => v != null)
+            .OrderByDescending(v => v)
+            .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Shows the update confirmation dialog on the Avalonia UI thread. Returns true when the user
+    /// chooses to update now, false otherwise.
+    /// </summary>
+    private static async Task<bool> PromptForUpdate(Version? installedVersion, Version availableVersion)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var box = MsBox.Avalonia.MessageBoxManager.GetMessageBoxCustom(new MessageBoxCustomParams
+            {
+                Topmost = true,
+                ShowInCenter = true,
+                ContentTitle = "Wabbajack Update Available",
+                ContentMessage =
+                    "A new version of Wabbajack is available.\n\n" +
+                    $"Currently installed version: {installedVersion?.ToString() ?? "none"}\n" +
+                    $"Available version: {availableVersion}\n\n" +
+                    "Would you like to update now?",
+                ButtonDefinitions = new[]
+                {
+                    new ButtonDefinition { Name = "Update now", IsDefault = true },
+                    new ButtonDefinition { Name = "Not now", IsCancel = true }
+                }
+            });
+
+            var result = await box.ShowAsync();
+            return result == "Update now";
+        });
     }
 
     [UriString]

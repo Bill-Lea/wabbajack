@@ -159,6 +159,7 @@ public static class ServiceExtensions
         service.AddSingleton<FileExtractor.FileExtractor>();
 
         service.AddSingleton<ModListDownloadMaintainer>();
+        service.AddSingleton<ModListUpdateService>();
 
         // Networking
         service.AddSingleton<HttpClient>();
