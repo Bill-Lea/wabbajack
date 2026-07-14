@@ -18,6 +18,7 @@ using Wabbajack.Networking.Http;
 using Wabbajack.Networking.WabbajackClientApi;
 using Wabbajack.Paths;
 using Wabbajack.Paths.IO;
+using Wabbajack.Services.OSIntegrated.Services;
 
 namespace Wabbajack;
 
@@ -82,6 +83,10 @@ public class LauncherUpdater
         }
 
         var version = Version.Parse(KnownFolders.EntryPoint.FileName.ToString());
+
+        // Pull downloaded modlist installers out of the per-version folders and into the shared folder
+        // BEFORE any old version folders are deleted below, so nothing is lost on update.
+        await ConsolidateDownloadedModLists();
 
         var oldVersions = CommonFolder.Value
             .EnumerateDirectories()
@@ -172,6 +177,18 @@ public class LauncherUpdater
             _logger.LogInformation("Finished updating wabbajack");
             await _wjclient.SendMetric("updated_launcher", $"{launcherVersion.FileVersion} -> {release.version}");
         }
+    }
+
+    /// <summary>
+    /// Historically each version folder kept its own <c>downloaded_mod_lists</c>, so downloaded modlist
+    /// installers were invisible to newer versions and eventually deleted with old version folders. This
+    /// migrates any such files up into the version-independent shared folder (the launcher common folder),
+    /// where the app now stores and looks for them. Newest-version copies win on conflict; runs are
+    /// idempotent and best-effort (failures are logged, never fatal).
+    /// </summary>
+    private async Task ConsolidateDownloadedModLists()
+    {
+        await DownloadedModListConsolidator.Consolidate(CommonFolder.Value, _logger);
     }
 
     /// <summary>

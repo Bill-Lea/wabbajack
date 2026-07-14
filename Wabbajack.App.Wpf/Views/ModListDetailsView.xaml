@@ -87,21 +87,9 @@
                                     VerticalAlignment="Center"
                                     Visibility="{Binding MetadataVM.ShowUpdateBadge, Converter={StaticResource bool2VisibilityConverter}}"
                                     ToolTip="{Binding MetadataVM.UpdateStatusTooltip}">
-                            <Border CornerRadius="4" Padding="8, 3, 8, 3" VerticalAlignment="Center">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="{StaticResource DarkSecondaryBrush}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding MetadataVM.UpdateState}" Value="UpdateAvailable">
-                                                <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding MetadataVM.UpdateState}" Value="Unlisted">
-                                                <Setter Property="Background" Value="{StaticResource UnavailableBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <TextBlock Text="{Binding MetadataVM.UpdateStatusText}" FontSize="13" FontWeight="Bold" />
+                            <Border CornerRadius="4" Padding="8, 3, 8, 3" VerticalAlignment="Center"
+                                    Background="#FF000000" BorderBrush="#59FFFFFF" BorderThickness="1">
+                                <TextBlock Text="{Binding MetadataVM.UpdateStatusText}" FontSize="13" FontWeight="Bold" Foreground="White" />
                             </Border>
                             <TextBlock VerticalAlignment="Center" Margin="8, 0, 0, 0" FontSize="13"
                                        Foreground="#80FFFFFF"

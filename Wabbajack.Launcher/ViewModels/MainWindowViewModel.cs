@@ -47,6 +47,13 @@ public class MainWindowViewModel : ViewModelBase
     private readonly bool _unattended = Environment.GetCommandLineArgs()
         .Any(a => string.Equals(a, UnattendedUpdateArg, StringComparison.OrdinalIgnoreCase));
 
+    // The launcher clears all logging providers (see Program.cs), so it writes its own diagnostic
+    // log directly to disk. This records the update-decision path so a run can be diagnosed after
+    // the fact (which version was found, the decision + reason, and the user's prompt choice).
+    private readonly AbsolutePath _logFile =
+        KnownFolders.LauncherAwarePath.Combine("logs").Combine("wabbajack-launcher.current.log");
+    private readonly object _logLock = new();
+
     public MainWindowViewModel(NexusApi nexusApi, HttpDownloader downloader, ITokenProvider<NexusOAuthState> tokenProvider, MainSettings settings)
     {
         AppDomain.CurrentDomain.UnhandledException += async (sender, e) =>
@@ -86,8 +93,49 @@ public class MainWindowViewModel : ViewModelBase
     [Reactive] ObservableCollection<string> StatusHistory { get; set; } = new ObservableCollection<string>();
     [Reactive] public string Status { get; set; }
 
+    /// <summary>
+    /// Starts a fresh log for this run, rolling the previous run's log aside. Logging must never
+    /// break startup, so every failure here is swallowed.
+    /// </summary>
+    private void InitLog()
+    {
+        try
+        {
+            var dir = _logFile.Parent.ToString();
+            Directory.CreateDirectory(dir);
+
+            // Keep exactly one prior run's log alongside the current one.
+            if (File.Exists(_logFile.ToString()))
+            {
+                var prev = _logFile.Parent.Combine("wabbajack-launcher.previous.log").ToString();
+                try { if (File.Exists(prev)) File.Delete(prev); } catch { /* ignored */ }
+                try { File.Move(_logFile.ToString(), prev); } catch { /* ignored */ }
+            }
+
+            File.WriteAllText(_logFile.ToString(),
+                $"############ Wabbajack Launcher log - {DateTime.Now:yyyy-MM-dd HH:mm:ss} ############{Environment.NewLine}");
+        }
+        catch { /* ignored - logging is best-effort */ }
+    }
+
+    /// <summary>Appends a single timestamped line to the current run's log. Never throws.</summary>
+    private void LogLine(string message)
+    {
+        try
+        {
+            lock (_logLock)
+                File.AppendAllText(_logFile.ToString(),
+                    $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
+        }
+        catch { /* ignored - logging is best-effort */ }
+    }
+
     private async Task CheckForUpdates()
     {
+        InitLog();
+        LogLine($"Launcher started. entryPoint={KnownFolders.EntryPoint}, cwd={KnownFolders.CurrentDirectory}, " +
+                $"unattended={_unattended}, AskBeforeApplicationUpdate={_settings.AskBeforeApplicationUpdate}");
+
         await VerifyCurrentLocation();
 
         _client.Headers.Add("user-agent", "Wabbajack Launcher");
@@ -117,21 +165,28 @@ public class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            LogLine($"ERROR selecting release: {ex.Message}");
             _errors.Add(ex.Message);
             await FinishAndExit();
         }
 
         if (_version == default)
         {
+            LogLine("Unable to find releases from any source.");
             _errors.Add("Unable to find releases");
             await FinishAndExit();
         }
 
+        LogLine($"Latest available version: {_version.Version}");
         Status = "Looking for Updates";
 
         var baseFolder = KnownFolders.CurrentDirectory.Combine(_version.Version.ToString());
 
-        if (baseFolder.Combine("Wabbajack.exe").FileExists()) await FinishAndExit();
+        if (baseFolder.Combine("Wabbajack.exe").FileExists())
+        {
+            LogLine($"Latest version {_version.Version} already present at {baseFolder}; launching without update.");
+            await FinishAndExit();
+        }
 
         // A newer version has been identified and no local copy of it exists yet. Decide whether to
         // ask the user before downloading/installing it. FinishAndExit() launches the highest local
@@ -140,9 +195,13 @@ public class MainWindowViewModel : ViewModelBase
         var decision = ApplicationUpdateDecider.Decide(installedVersion, _version.Version,
             _settings.AskBeforeApplicationUpdate, _unattended);
 
+        LogLine($"Highest installed version: {installedVersion?.ToString() ?? "none"}");
+        LogLine($"Update decision: action={decision.Action}, reason={decision.Reason}");
+
         if (decision.Action == UpdateAction.NoUpdate)
         {
             Status = $"No newer version than {installedVersion} available; launching current version.";
+            LogLine(Status);
             await FinishAndExit();
             return;
         }
@@ -159,13 +218,18 @@ public class MainWindowViewModel : ViewModelBase
                 Status = $"Update prompt disabled in settings; updating to {_version.Version} without prompting.";
                 break;
         }
+        if (decision.Reason != UpdateBypassReason.None)
+            LogLine(Status);
 
         if (decision.Action == UpdateAction.AskUser)
         {
+            LogLine($"Prompting user to update from {installedVersion?.ToString() ?? "none"} to {_version.Version}.");
             var proceed = await PromptForUpdate(installedVersion, _version.Version);
+            LogLine($"User chose: {(proceed ? "Update now" : "Not now")}.");
             if (!proceed)
             {
                 Status = $"Update to {_version.Version} declined; launching current version.";
+                LogLine(Status);
                 await FinishAndExit();
                 return;
             }
@@ -173,6 +237,7 @@ public class MainWindowViewModel : ViewModelBase
             Status = $"Update to {_version.Version} accepted.";
         }
 
+        LogLine($"Proceeding to download version {_version.Version}.");
         Status = $"Getting download Uri for {_version.Version}";
         var uri = await _version.Uri();
 
@@ -205,12 +270,14 @@ public class MainWindowViewModel : ViewModelBase
         wc.DownloadProgressChanged += (sender, args) => UpdateProgress($"{_version.Version}", sender, args);
         Status = $"Downloading {_version.Version} ...";
         byte[] data;
+        LogLine($"Downloading {_version.Version} from {uri}");
         try
         {
             data = await wc.DownloadDataTaskAsync(uri);
         }
         catch (Exception ex)
         {
+            LogLine($"Download failed ({ex.Message}); retrying once.");
             _errors.Add(ex.Message);
             // Something went wrong so fallback to original URL
             try
@@ -219,11 +286,14 @@ public class MainWindowViewModel : ViewModelBase
             }
             catch (Exception ex2)
             {
+                LogLine($"Download retry failed: {ex2.Message}");
                 _errors.Add(ex2.Message);
                 await FinishAndExit();
                 throw; // avoid unsigned variable 'data'
             }
         }
+
+        LogLine($"Downloaded {data.Length} bytes; extracting to {baseFolder}");
 
         try
         {
@@ -387,12 +457,14 @@ public class MainWindowViewModel : ViewModelBase
 
             if (wjFolder == default)
             {
+                LogLine("No Wabbajack install found to launch.");
                 _errors.Add("No WJ install found");
                 throw new Exception("No WJ install found");
             }
 
             var filename = wjFolder.Combine("Wabbajack.exe");
             await CreateBatchFile(filename);
+            LogLine($"Launching {filename}");
             var info = new ProcessStartInfo
             {
                 FileName = filename.ToString(),
@@ -404,6 +476,7 @@ public class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
+            LogLine($"ERROR in FinishAndExit: {ex.Message}");
             _errors.Add(ex.Message);
             if (_errors.Count == 0)
             {
@@ -419,6 +492,9 @@ public class MainWindowViewModel : ViewModelBase
         }
         finally
         {
+            LogLine(_errors.Count > 0
+                ? $"Launcher exiting with {_errors.Count} error(s): {string.Join(" | ", _errors)}"
+                : "Launcher exiting normally.");
             Environment.Exit(0);
         }
     }

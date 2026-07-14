@@ -261,39 +261,25 @@
                                 Margin="8, 42, 0, 0"
                                 CornerRadius="4"
                                 Padding="8, 3, 8, 3"
+                                Background="#FF000000"
+                                BorderBrush="#59FFFFFF"
+                                BorderThickness="1"
                                 Visibility="{Binding ShowUpdateBadge, Converter={StaticResource bool2VisibilityConverter}}"
                                 ToolTip="{Binding UpdateStatusTooltip}">
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <!--  Default (Unknown / CheckFailed): muted  -->
-                                    <Setter Property="Background" Value="{StaticResource DarkSecondaryBrush}" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding UpdateState}" Value="UpdateAvailable">
-                                            <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding UpdateState}" Value="Current">
-                                            <Setter Property="Background" Value="{StaticResource DarkSecondaryBrush}" />
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding UpdateState}" Value="Unlisted">
-                                            <Setter Property="Background" Value="{StaticResource UnavailableBrush}" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
                             <StackPanel Orientation="Vertical">
                                 <TextBlock Text="{Binding UpdateStatusText}"
                                            FontSize="12"
                                            FontWeight="Bold"
-                                           Foreground="{StaticResource ForegroundBrush}" />
+                                           Foreground="White" />
                                 <TextBlock Text="{Binding DownloadedVersionText}"
                                            FontSize="11"
                                            Opacity="0.9"
-                                           Foreground="{StaticResource ForegroundBrush}"
+                                           Foreground="White"
                                            Visibility="{Binding UpdateAvailable, Converter={StaticResource bool2VisibilityConverter}}" />
                                 <TextBlock Text="{Binding AvailableVersionText}"
                                            FontSize="11"
                                            Opacity="0.9"
-                                           Foreground="{StaticResource ForegroundBrush}"
+                                           Foreground="White"
                                            Visibility="{Binding UpdateAvailable, Converter={StaticResource bool2VisibilityConverter}}" />
                             </StackPanel>
                         </Border>

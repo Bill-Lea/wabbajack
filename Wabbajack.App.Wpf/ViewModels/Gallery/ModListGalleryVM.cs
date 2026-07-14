@@ -609,7 +609,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
 
             _logger.LogInformation("[Protocol] Normalized URL: {url}", url);
 
-            var downloadDir = KnownFolders.EntryPoint.Combine("downloaded_mod_lists");
+            var downloadDir = _maintainer.DownloadLocation;
             if (!downloadDir.DirectoryExists())
                 downloadDir.CreateDirectory();
 
@@ -756,7 +756,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
             ProtocolStatusText = $"Downloading {collectionInfo.CollectionName}…";
 
             // Download the .wabbajack file
-            var downloadDir = KnownFolders.EntryPoint.Combine("downloaded_mod_lists");
+            var downloadDir = _maintainer.DownloadLocation;
             if (!downloadDir.DirectoryExists())
                 downloadDir.CreateDirectory();
 

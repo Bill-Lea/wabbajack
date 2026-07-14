@@ -120,7 +120,7 @@ public static class ServiceExtensions
         service.AddSingleton(s => new Configuration
         {
             EncryptedDataLocation = KnownFolders.WabbajackAppLocal.Combine("encrypted"),
-            ModListsDownloadLocation = KnownFolders.EntryPoint.Combine("downloaded_mod_lists"),
+            ModListsDownloadLocation = options.ModListsDownloadLocationOverride ?? KnownFolders.EntryPoint.Combine("downloaded_mod_lists"),
             SavedSettingsLocation = KnownFolders.WabbajackAppLocal.Combine("saved_settings"),
             LogLocation = KnownFolders.LauncherAwarePath.Combine("logs"),
             ImageCacheLocation = KnownFolders.WabbajackAppLocal.Combine("image_cache")
@@ -269,5 +269,12 @@ public static class ServiceExtensions
     {
         public bool UseLocalCache { get; set; } = false;
         public bool UseStubbedGameFolders { get; set; } = false;
+
+        /// <summary>
+        /// When set, overrides the default per-version downloaded-modlists folder. The WPF app points this at
+        /// a version-independent shared folder so downloaded modlist installers persist across application
+        /// updates. Null keeps the legacy default (next to the running executable).
+        /// </summary>
+        public AbsolutePath? ModListsDownloadLocationOverride { get; set; }
     }
 }

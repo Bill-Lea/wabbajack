@@ -425,7 +425,11 @@ public partial class App
 
     private static IServiceCollection ConfigureServices(IServiceCollection services)
     {
-        services.AddOSIntegrated();
+        // Store downloaded modlist installers in the version-independent shared folder (the launcher's
+        // common folder) rather than next to the current version's executable, so downloads persist across
+        // application updates. CommonFolder falls back to the entry point in non-standard/portable layouts.
+        services.AddOSIntegrated(o =>
+            o.ModListsDownloadLocationOverride = LauncherUpdater.CommonFolder.Value.Combine("downloaded_mod_lists"));
 
         // Orc.FileAssociation
         services.AddSingleton<IApplicationRegistrationService>(new ApplicationRegistrationService());

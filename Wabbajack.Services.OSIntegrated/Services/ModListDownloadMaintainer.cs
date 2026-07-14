@@ -37,6 +37,9 @@ public class ModListDownloadMaintainer
         _dtos = dtos;
     }
 
+    /// <summary>The folder downloaded modlist installers live in (version-independent in the WPF app).</summary>
+    public AbsolutePath DownloadLocation => _configuration.ModListsDownloadLocation;
+
     public AbsolutePath ModListPath(ModlistMetadata metadata)
     {
         return _configuration.ModListsDownloadLocation.Combine(metadata.NamespacedName.Replace("/", "_@@_")).WithExtension(Ext.Wabbajack);
