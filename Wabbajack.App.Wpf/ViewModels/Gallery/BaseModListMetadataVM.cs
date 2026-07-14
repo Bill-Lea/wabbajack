@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net.Http;
+using System.Reactive.Concurrency;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Reactive.Subjects;
@@ -21,6 +22,7 @@ using Wabbajack.Messages;
 using Wabbajack.Models;
 using Wabbajack.Networking.WabbajackClientApi;
 using Wabbajack.Paths;
+using Wabbajack.Paths.IO;
 using Wabbajack.RateLimiter;
 using Wabbajack.Services.OSIntegrated.Services;
 
@@ -48,6 +50,16 @@ public class BaseModListMetadataVM : ViewModel
     [Reactive] public Percent ProgressPercent { get; set; }
     [Reactive] public bool IsBroken { get; protected set; }
     [Reactive] public ModListStatus Status { get; set; }
+
+    // Update-availability of the locally downloaded installer relative to the gallery.
+    [Reactive] public ModListUpdateState UpdateState { get; set; } = ModListUpdateState.Unknown;
+    [Reactive] public bool UpdateAvailable { get; set; }
+    // Whether the update badge/indicator should be shown at all (only when a local file exists).
+    [Reactive] public bool ShowUpdateBadge { get; set; }
+    [Reactive] public string UpdateStatusText { get; set; } = string.Empty;
+    [Reactive] public string UpdateStatusTooltip { get; set; } = string.Empty;
+    [Reactive] public string DownloadedVersionText { get; set; } = string.Empty;
+    [Reactive] public string AvailableVersionText { get; set; } = string.Empty;
     [Reactive] public bool IsDownloading { get; protected set; }
     [Reactive] public string DownloadSizeText { get; protected set; }
     [Reactive] public string InstallSizeText { get; protected set; }
@@ -73,16 +85,18 @@ public class BaseModListMetadataVM : ViewModel
     protected Subject<bool> IsLoadingIdle;
     protected readonly ILogger _logger;
     protected readonly ModListDownloadMaintainer _maintainer;
+    protected readonly ModListUpdateService _updateService;
     protected readonly Client _wjClient;
     protected readonly CancellationToken _cancellationToken;
     protected readonly ServiceProvider _serviceProvider;
     protected readonly ImageCacheManager _icm;
 
     public BaseModListMetadataVM(ILogger logger, ModlistMetadata metadata,
-        ModListDownloadMaintainer maintainer, ModListSummary? summary, Client wjClient, CancellationToken cancellationToken, HttpClient client, ImageCacheManager icm)
+        ModListDownloadMaintainer maintainer, ModListUpdateService updateService, ModListSummary? summary, Client wjClient, CancellationToken cancellationToken, HttpClient client, ImageCacheManager icm)
     {
         _logger = logger;
         _maintainer = maintainer;
+        _updateService = updateService;
         Metadata = metadata;
         Summary = summary;
         _wjClient = wjClient;
@@ -186,6 +200,54 @@ public class BaseModListMetadataVM : ViewModel
             Status = ModListStatus.Downloading;
         else
             Status = ModListStatus.NotDownloaded;
+
+        await RefreshUpdateStatus();
+    }
+
+    /// <summary>
+    ///     Compares the locally downloaded installer (if any) against the current gallery version and
+    ///     surfaces an "update available" badge. Only the small <c>.metadata</c> sidecar is read (cached);
+    ///     the large <c>.wabbajack</c> archive is never opened here. Safe to call on any refresh — it never
+    ///     blocks the UI thread and swallows failures into a <see cref="ModListUpdateState.CheckFailed"/> badge.
+    /// </summary>
+    protected async Task RefreshUpdateStatus()
+    {
+        // A local file must exist before an update badge makes sense.
+        var localExists = await _maintainer.HaveModList(Metadata)
+                          || _maintainer.ModListPath(Metadata).FileExists();
+
+        if (!localExists)
+        {
+            ApplyUpdateResult(new ModListUpdateResult(ModListUpdateState.Unknown, null, null), show: false);
+            return;
+        }
+
+        var result = await _updateService.CheckForUpdateAsync(_maintainer.ModListPath(Metadata), Metadata, _cancellationToken);
+        RxApp.MainThreadScheduler.Schedule(() => ApplyUpdateResult(result, show: true));
+    }
+
+    private void ApplyUpdateResult(ModListUpdateResult result, bool show)
+    {
+        UpdateState = result.State;
+        UpdateAvailable = result.IsUpdateAvailable;
+        ShowUpdateBadge = show;
+
+        DownloadedVersionText = result.LocalVersion is not null ? $"Downloaded: v{result.LocalVersion}" : string.Empty;
+        AvailableVersionText = result.OnlineVersion is not null ? $"Available: v{result.OnlineVersion}" : string.Empty;
+
+        (UpdateStatusText, UpdateStatusTooltip) = result.State switch
+        {
+            ModListUpdateState.UpdateAvailable => ("UPDATE AVAILABLE",
+                "A newer modlist installer is available. Review the modlist changelog before reinstalling."),
+            ModListUpdateState.Current => ("CURRENT",
+                "You have the latest published version of this modlist installer."),
+            ModListUpdateState.Unlisted => ("NOT IN GALLERY",
+                "This downloaded modlist is no longer listed in the gallery. It is kept and can still be installed."),
+            ModListUpdateState.CheckFailed => ("STATUS UNKNOWN",
+                "Could not check for a newer version. Verify your connection and refresh the gallery."),
+            _ => ("STATUS UNKNOWN",
+                "The installed version could not be determined, so update availability is unknown."),
+        };
     }
 
     public enum ModListStatus

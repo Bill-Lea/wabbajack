@@ -108,6 +108,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
     private readonly ILogger<ModListGalleryVM> _logger;
     private readonly GameLocator _locator;
     private readonly ModListDownloadMaintainer _maintainer;
+    private readonly ModListUpdateService _updateService;
     private readonly SettingsManager _settingsManager;
     private readonly CancellationToken _cancellationToken;
     private readonly IServiceProvider _serviceProvider;
@@ -128,7 +129,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
     public ICommand LoadLocalFileCommand { get; set; }
 
     public ModListGalleryVM(ILogger<ModListGalleryVM> logger, Client wjClient, GameLocator locator,
-        SettingsManager settingsManager, ModListDownloadMaintainer maintainer, CancellationToken cancellationToken, IServiceProvider serviceProvider)
+        SettingsManager settingsManager, ModListDownloadMaintainer maintainer, ModListUpdateService updateService, CancellationToken cancellationToken, IServiceProvider serviceProvider)
         : base(logger)
     {
         var searchThrottle = TimeSpan.FromSeconds(0.35);
@@ -136,6 +137,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
         _logger = logger;
         _locator = locator;
         _maintainer = maintainer;
+        _updateService = updateService;
         _settingsManager = settingsManager;
         _cancellationToken = cancellationToken;
         _serviceProvider = serviceProvider;
@@ -607,7 +609,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
 
             _logger.LogInformation("[Protocol] Normalized URL: {url}", url);
 
-            var downloadDir = KnownFolders.EntryPoint.Combine("downloaded_mod_lists");
+            var downloadDir = _maintainer.DownloadLocation;
             if (!downloadDir.DirectoryExists())
                 downloadDir.CreateDirectory();
 
@@ -754,7 +756,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
             ProtocolStatusText = $"Downloading {collectionInfo.CollectionName}…";
 
             // Download the .wabbajack file
-            var downloadDir = KnownFolders.EntryPoint.Combine("downloaded_mod_lists");
+            var downloadDir = _maintainer.DownloadLocation;
             if (!downloadDir.DirectoryExists())
                 downloadDir.CreateDirectory();
 
@@ -919,7 +921,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
             {
                 e.Clear();
                 e.AddOrUpdate(modLists.Select(m =>
-                    new GalleryModListMetadataVM(_logger, this, m, _maintainer, modlistSummaries.TryGetValue(m.Links.MachineURL, out var summary) ? summary : null, _wjClient, _cancellationToken,
+                    new GalleryModListMetadataVM(_logger, this, m, _maintainer, _updateService, modlistSummaries.TryGetValue(m.Links.MachineURL, out var summary) ? summary : null, _wjClient, _cancellationToken,
                         httpClient, cacheManager)));
             });
             LoadGameTypeEntries();

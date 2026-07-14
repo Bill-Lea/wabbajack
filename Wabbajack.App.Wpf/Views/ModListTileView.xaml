@@ -252,6 +252,37 @@
                                 </Border>
                             </Grid>
                         </Grid>
+
+                        <!--  Downloaded-installer update status badge (only shown when a local file exists)  -->
+                        <Border x:Name="UpdateStatusBadge"
+                                Panel.ZIndex="2"
+                                VerticalAlignment="Top"
+                                HorizontalAlignment="Left"
+                                Margin="8, 42, 0, 0"
+                                CornerRadius="4"
+                                Padding="8, 3, 8, 3"
+                                Background="#FF000000"
+                                BorderBrush="#59FFFFFF"
+                                BorderThickness="1"
+                                Visibility="{Binding ShowUpdateBadge, Converter={StaticResource bool2VisibilityConverter}}"
+                                ToolTip="{Binding UpdateStatusTooltip}">
+                            <StackPanel Orientation="Vertical">
+                                <TextBlock Text="{Binding UpdateStatusText}"
+                                           FontSize="12"
+                                           FontWeight="Bold"
+                                           Foreground="White" />
+                                <TextBlock Text="{Binding DownloadedVersionText}"
+                                           FontSize="11"
+                                           Opacity="0.9"
+                                           Foreground="White"
+                                           Visibility="{Binding UpdateAvailable, Converter={StaticResource bool2VisibilityConverter}}" />
+                                <TextBlock Text="{Binding AvailableVersionText}"
+                                           FontSize="11"
+                                           Opacity="0.9"
+                                           Foreground="White"
+                                           Visibility="{Binding UpdateAvailable, Converter={StaticResource bool2VisibilityConverter}}" />
+                            </StackPanel>
+                        </Border>
                         <Border
                         BorderThickness="0"
                         HorizontalAlignment="Stretch"
