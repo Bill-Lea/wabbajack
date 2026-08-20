@@ -1,0 +1,50 @@
+Degree 0: 3
+Degree 1: 2883
+Total deg<=1: 2886
+
+=== Degree-0 samples ===
+  AssemblyInfo.cs | src=Wabbajack.App.Wpf/Properties/AssemblyInfo.cs | type=code
+  AssemblyInfo.cs | src=Wabbajack.Reporting/Properties/AssemblyInfo.cs | type=code
+  ValidationReport.razor | src=Wabbajack.Server.Lib/HtmlReports/ValidationReport.razor | type=code
+
+=== Degree-1 samples ===
+  App.xaml | src=Wabbajack.App.Wpf/App.xaml | ['-> Application']
+  IHost | src= | ['-> App']
+  StartupEventArgs | src= | ['-> .OnStartup()']
+  ILogger | src= | ['-> .EnsureSafeWorkingDirectoryOrExit()']
+  ExitEventArgs | src= | ['-> .OnExit()']
+  ILoggingBuilder | src= | ['-> .AddLogging()']
+  IServiceCollection | src= | ['-> .ConfigureServices()']
+  string | src= | ['-> Consts']
+  Uri | src= | ['-> Consts']
+  Version | src= | ['-> Consts']
+  byte | src= | ['-> Consts']
+  .Register() | src=Wabbajack.App.Wpf/Converters/ConverterRegistration.cs | ['-> ConverterRegistration']
+  .ToString() | src=Wabbajack.App.Wpf/Error States/DownloadsPathValidationResult.cs | ['-> DownloadsPathValidationResult']
+  bool | src= | ['-> GetResponse']
+  string | src= | ['-> GetResponse']
+  .GetHashCode() | src=Wabbajack.App.Wpf/Error States/GetResponse.cs | ['-> GetResponse']
+  .ToString() | src=Wabbajack.App.Wpf/Error States/GetResponse.cs | ['-> GetResponse']
+  .BubbleFailure() | src=Wabbajack.App.Wpf/Error States/GetResponse.cs | ['-> GetResponse']
+  Func | src= | ['-> .Bubble()']
+  .EvaluateOrThrow() | src=Wabbajack.App.Wpf/Error States/GetResponse.cs | ['-> GetResponse']
+  .Succeed() | src=Wabbajack.App.Wpf/Error States/GetResponse.cs | ['-> GetResponse']
+  .Create() | src=Wabbajack.App.Wpf/Error States/GetResponse.cs | ['-> GetResponse']
+  .ToString() | src=Wabbajack.App.Wpf/Error States/InstallPathValidationResult.cs | ['-> InstallPathValidationResult']
+  string | src= | ['-> ValidationResult']
+  .ToString() | src=Wabbajack.App.Wpf/Error States/ValidationResult.cs | ['-> ValidationResult']
+
+=== Type breakdown (deg<=1) ===
+  code: 2495
+  concept: 391
+
+=== Label categories (deg<=1) ===
+  class/type name: 1219
+  method/anonymous: 930
+  BCL primitive/type: 631
+  variable/parameter: 106
+
+=== Top source projects (deg-0) ===
+  Wabbajack.App.Wpf: 1
+  Wabbajack.Reporting: 1
+  Wabbajack.Server.Lib: 1
