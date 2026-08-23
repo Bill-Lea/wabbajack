@@ -1,0 +1,43 @@
+﻿namespace Wabbajack.Configuration;
+
+public enum UpdateAction
+{
+    NoUpdate,
+    UpdateWithoutPrompt,
+    AskUser
+}
+
+public enum UpdateBypassReason
+{
+    None,
+    FreshInstall,
+    UnattendedFlag,
+    SettingDisabled
+}
+
+public readonly record struct UpdateDecision(UpdateAction Action, UpdateBypassReason Reason);
+
+/// <summary>
+/// Hardened custom-build policy:
+/// a genuinely fresh install may proceed automatically, but once any Wabbajack
+/// version is installed, every newer version requires explicit user approval.
+/// The persisted setting and unattended flag are intentionally ignored for
+/// replacement of an existing installation.
+/// </summary>
+public static class ApplicationUpdateDecider
+{
+    public static UpdateDecision Decide(
+        Version? installedVersion,
+        Version availableVersion,
+        bool askBeforeApplicationUpdate,
+        bool unattended)
+    {
+        if (installedVersion != null && availableVersion <= installedVersion)
+            return new UpdateDecision(UpdateAction.NoUpdate, UpdateBypassReason.None);
+
+        if (installedVersion == null)
+            return new UpdateDecision(UpdateAction.UpdateWithoutPrompt, UpdateBypassReason.FreshInstall);
+
+        return new UpdateDecision(UpdateAction.AskUser, UpdateBypassReason.None);
+    }
+}

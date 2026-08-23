@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -186,6 +186,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             LogLine($"Latest version {_version.Version} already present at {baseFolder}; launching without update.");
             await FinishAndExit();
+            return;
         }
 
         // A newer version has been identified and no local copy of it exists yet. Decide whether to
@@ -228,6 +229,14 @@ public class MainWindowViewModel : ViewModelBase
             LogLine($"User chose: {(proceed ? "Update now" : "Not now")}.");
             if (!proceed)
             {
+                if (installedVersion == null)
+                {
+                    Status = $"Installation of {_version.Version} declined.";
+                    LogLine(Status);
+                    Environment.Exit(0);
+                    return;
+                }
+
                 Status = $"Update to {_version.Version} declined; launching current version.";
                 LogLine(Status);
                 await FinishAndExit();

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using Wabbajack.Configuration;
 using Xunit;
 
@@ -6,98 +6,66 @@ namespace Wabbajack.Configuration.Test;
 
 public class ApplicationUpdateDeciderTests
 {
-    private static readonly Version V1 = new(1, 0, 0, 0);
-    private static readonly Version V2 = new(2, 0, 0, 0);
+    private static readonly Version V1 = new(1,0,0,0);
+    private static readonly Version V2 = new(2,0,0,0);
 
     [Fact]
-    public void NoUpdateAvailable_WhenAvailableEqualsInstalled()
+    public void EqualVersion_NoUpdate()
     {
-        var decision = ApplicationUpdateDecider.Decide(V2, V2,
-            askBeforeApplicationUpdate: true, unattended: false);
-
-        Assert.Equal(UpdateAction.NoUpdate, decision.Action);
+        var d=ApplicationUpdateDecider.Decide(V2,V2,true,false);
+        Assert.Equal(UpdateAction.NoUpdate,d.Action);
     }
 
     [Fact]
-    public void NoUpdateAvailable_WhenAvailableOlderThanInstalled()
+    public void OlderAvailableVersion_NoUpdate()
     {
-        var decision = ApplicationUpdateDecider.Decide(V2, V1,
-            askBeforeApplicationUpdate: true, unattended: false);
-
-        Assert.Equal(UpdateAction.NoUpdate, decision.Action);
+        var d=ApplicationUpdateDecider.Decide(V2,V1,true,false);
+        Assert.Equal(UpdateAction.NoUpdate,d.Action);
     }
 
     [Fact]
-    public void UpdateAvailable_SettingTrue_AsksUser()
+    public void NewerVersion_AsksUser()
     {
-        var decision = ApplicationUpdateDecider.Decide(V1, V2,
-            askBeforeApplicationUpdate: true, unattended: false);
-
-        Assert.Equal(UpdateAction.AskUser, decision.Action);
-        Assert.Equal(UpdateBypassReason.None, decision.Reason);
+        var d=ApplicationUpdateDecider.Decide(V1,V2,true,false);
+        Assert.Equal(UpdateAction.AskUser,d.Action);
+        Assert.Equal(UpdateBypassReason.None,d.Reason);
     }
 
     [Fact]
-    public void FreshInstall_NoInstalledVersion_ProceedsWithoutPrompt()
+    public void SettingFalse_StillAsksUser()
     {
-        var decision = ApplicationUpdateDecider.Decide(null, V2,
-            askBeforeApplicationUpdate: true, unattended: false);
-
-        Assert.Equal(UpdateAction.UpdateWithoutPrompt, decision.Action);
-        Assert.Equal(UpdateBypassReason.FreshInstall, decision.Reason);
+        var d=ApplicationUpdateDecider.Decide(V1,V2,false,false);
+        Assert.Equal(UpdateAction.AskUser,d.Action);
     }
 
     [Fact]
-    public void UnattendedFlag_ProceedsWithoutPrompt_AndReportsBypass()
+    public void Unattended_StillAsksUser()
     {
-        var decision = ApplicationUpdateDecider.Decide(V1, V2,
-            askBeforeApplicationUpdate: true, unattended: true);
-
-        Assert.Equal(UpdateAction.UpdateWithoutPrompt, decision.Action);
-        Assert.Equal(UpdateBypassReason.UnattendedFlag, decision.Reason);
+        var d=ApplicationUpdateDecider.Decide(V1,V2,true,true);
+        Assert.Equal(UpdateAction.AskUser,d.Action);
     }
 
     [Fact]
-    public void SettingFalse_ProceedsWithoutPrompt_LegacyBehavior()
+    public void SettingFalseAndUnattended_StillAsksUser()
     {
-        var decision = ApplicationUpdateDecider.Decide(V1, V2,
-            askBeforeApplicationUpdate: false, unattended: false);
-
-        Assert.Equal(UpdateAction.UpdateWithoutPrompt, decision.Action);
-        Assert.Equal(UpdateBypassReason.SettingDisabled, decision.Reason);
+        var d=ApplicationUpdateDecider.Decide(V1,V2,false,true);
+        Assert.Equal(UpdateAction.AskUser,d.Action);
     }
 
     [Fact]
-    public void FreshInstall_TakesPrecedenceOverSettingAndUnattended()
+    public void FreshInstall_ProceedsAutomatically()
     {
-        var decision = ApplicationUpdateDecider.Decide(null, V2,
-            askBeforeApplicationUpdate: false, unattended: true);
-
-        Assert.Equal(UpdateAction.UpdateWithoutPrompt, decision.Action);
-        Assert.Equal(UpdateBypassReason.FreshInstall, decision.Reason);
+        var d=ApplicationUpdateDecider.Decide(null,V2,false,true);
+        Assert.Equal(UpdateAction.UpdateWithoutPrompt,d.Action);
+        Assert.Equal(UpdateBypassReason.FreshInstall,d.Reason);
     }
 
     [Fact]
-    public void AskBeforeApplicationUpdate_DefaultsToTrue_WhenAbsentFromJson()
+    public void AskBeforeApplicationUpdate_DefaultsTrue()
     {
-        // A settings file written before the property existed has no "AskBeforeApplicationUpdate" key.
-        const string legacyJson = "{\"CurrentSettingsVersion\":1}";
-
-        var settings = JsonSerializer.Deserialize<MainSettings>(legacyJson);
-
-        Assert.NotNull(settings);
-        Assert.True(settings!.AskBeforeApplicationUpdate);
-    }
-
-    [Fact]
-    public void AskBeforeApplicationUpdate_RoundTripsThroughJson()
-    {
-        var original = new MainSettings { AskBeforeApplicationUpdate = false };
-
-        var json = JsonSerializer.Serialize(original);
-        var restored = JsonSerializer.Deserialize<MainSettings>(json);
-
-        Assert.NotNull(restored);
-        Assert.False(restored!.AskBeforeApplicationUpdate);
+        const string json="{\"CurrentSettingsVersion\":1}";
+        var s=JsonSerializer.Deserialize<MainSettings>(json);
+        Assert.NotNull(s);
+        Assert.True(s!.AskBeforeApplicationUpdate);
     }
 }

@@ -1,0 +1,1 @@
+"C:\CodePackages\wabbajack_clone\4.2.2.0\cli\wabbajack-cli.exe" %*
