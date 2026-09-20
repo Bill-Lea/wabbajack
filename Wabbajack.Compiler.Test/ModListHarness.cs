@@ -10,6 +10,7 @@ using Wabbajack.Downloaders;
 using Wabbajack.DTOs;
 using Wabbajack.DTOs.JsonConverters;
 using Wabbajack.Installer;
+using Wabbajack.Installer.Preflight;
 using Wabbajack.Paths;
 using Wabbajack.Paths.IO;
 using Xunit;
@@ -24,6 +25,7 @@ public class ModListHarness
     public readonly FileExtractor.FileExtractor _fileExtractor;
     private readonly AbsolutePath _gameFolder;
     private readonly AbsolutePath _installDownloads;
+    private readonly AbsolutePath _watchFolder;
     private readonly AbsolutePath _installLocation;
     private readonly ILogger<ModListHarness> _logger;
     private readonly TemporaryFileManager _manager;
@@ -55,6 +57,7 @@ public class ModListHarness
         _outputFile = _outputFolder.Path.Combine(_profileName + ".wabbajack");
 
         _installDownloads = _installLocation.Combine("downloads");
+        _watchFolder = _manager.CreateFolder();
         _dtos = dtos;
     }
 
@@ -104,12 +107,64 @@ public class ModListHarness
         return modlist;
     }
 
-    public async Task<bool> Install()
+    public async Task<bool> Install(bool prePlaceDownloads = true)
     {
+        return await InstallWithResult(prePlaceDownloads) == InstallResult.Succeeded;
+    }
+
+    /// <summary>
+    ///     Installs and hands back the raw <see cref="InstallResult" />, for tests that care which failure
+    ///     they got. Pass <paramref name="prePlaceDownloads" /> as false to install against whatever is in
+    ///     the install's downloads folder right now, which is how an update over an existing install with
+    ///     archives it no longer needs is exercised.
+    /// </summary>
+    public async Task<InstallResult> InstallWithResult(bool prePlaceDownloads = true)
+    {
+        // The installer no longer downloads: what compiling used has to be in place before Begin.
+        if (prePlaceDownloads)
+            await PrePlaceDownloads();
         using var scope = _serviceProvider.CreateScope();
-        var settings = scope.ServiceProvider.GetService<InstallerConfiguration>()!;
+        await ConfigureInstall(scope.ServiceProvider);
+        var installer = scope.ServiceProvider.GetService<StandardInstaller>()!;
 
+        return await installer.Begin(CancellationToken.None);
+    }
 
+    /// <summary>
+    ///     Runs the preflight checklist against the compiled list, the way the installer hosts do before
+    ///     <see cref="Install" />. Defaults to the CLI's options: no waiting for manual downloads, no metrics.
+    ///     The game folder gets the game's required files (empty) so the game-files check has something to find.
+    /// </summary>
+    public async Task<PreflightOutcome> Preflight(PreflightOptions? options = null)
+    {
+        foreach (var required in Game.SkyrimSpecialEdition.MetaData().RequiredFiles)
+        {
+            var file = _gameFolder.Combine(required);
+            if (!file.FileExists())
+                await file.WriteAllTextAsync("");
+        }
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        var settings = await ConfigureInstall(scope.ServiceProvider);
+        var runner = PreflightRunner.Create(scope.ServiceProvider, settings,
+            options ?? new PreflightOptions {WaitForManualDownloads = false, SendMetrics = false, WatchFolder = _watchFolder});
+        return await runner.RunAll(CancellationToken.None);
+    }
+
+    /// <summary>
+    ///     Copies what compiling used into the install's downloads folder, so an install (or a preflight)
+    ///     finds every archive already in place.
+    /// </summary>
+    public async Task PrePlaceDownloads()
+    {
+        _installDownloads.CreateDirectory();
+        foreach (var file in _downloadPath.EnumerateFiles())
+            await file.CopyToAsync(_installDownloads.Combine(file.FileName), CancellationToken.None);
+    }
+
+    private async Task<InstallerConfiguration> ConfigureInstall(IServiceProvider scoped)
+    {
+        var settings = scoped.GetService<InstallerConfiguration>()!;
         settings.Install = _installLocation;
         settings.Downloads = _installDownloads;
         settings.ModList = await StandardInstaller.LoadFromFile(_dtos, _outputFile);
@@ -124,19 +179,34 @@ public class ModListHarness
             SystemPageSize = 8L * 1024 * 1024 * 1024,
             VideoMemorySize = 8L * 1024 * 1024 * 1024
         };
-
-        var installer = scope.ServiceProvider.GetService<StandardInstaller>()!;
-
-        return await installer.Begin(CancellationToken.None) == InstallResult.Succeeded;
+        return settings;
     }
 
-    public async Task AddManualDownload(AbsolutePath path)
+    /// <summary>
+    ///     Adds a file the list will record as a manual download. The compiler checks every URL against the
+    ///     server allow-list, so the default is a page under an allowed prefix; nothing is ever fetched from it.
+    /// </summary>
+    public async Task<Uri> AddManualDownload(AbsolutePath path, Uri? url = null)
     {
+        url ??= new Uri($"https://skse.silverlock.org/beta/{path.FileName}");
         var toPath = path.FileName.RelativeTo(_downloadPath);
         await path.CopyToAsync(toPath, CancellationToken.None);
 
         await toPath.WithExtension(Ext.Meta)
-            .WriteAllLinesAsync(new[] {"[General]", $"manualURL={path.FileName}"}, CancellationToken.None);
+            .WriteAllLinesAsync(new[] {"[General]", $"manualURL={url}"}, CancellationToken.None);
+        return url;
+    }
+
+    /// <summary>Path of a file in the folder the compiler reads archives from.</summary>
+    public AbsolutePath DownloadPath(string fileName)
+    {
+        return _downloadPath.Combine(fileName);
+    }
+
+    /// <summary>Path of a file in the folder the install reads archives from.</summary>
+    public AbsolutePath InstallDownloadPath(string fileName)
+    {
+        return _installDownloads.Combine(fileName);
     }
 
     public async Task<Mod> InstallMod(Extension ext, Uri uri)
@@ -157,9 +227,15 @@ public class ModListHarness
         return mod;
     }
 
+    /// <summary>Where a file of the compiled source lands in the install folder.</summary>
+    public AbsolutePath InstalledPath(AbsolutePath source)
+    {
+        return source.RelativeTo(_source).RelativeTo(_installLocation);
+    }
+
     public void VerifyInstalledFile(AbsolutePath source)
     {
-        var dest = source.RelativeTo(_source).RelativeTo(_installLocation);
+        var dest = InstalledPath(source);
         _logger.LogInformation("Verifying {file}", source.RelativeTo(_source));
         Assert.Equal(source.Size(), dest.Size());
     }

@@ -46,20 +46,26 @@ public static class AsyncParallelExtensions
         foreach (var itm in tasks)
         {
             var val = await itm;
-            if (itm != default) 
-                yield return await itm;
+            if (val != default)
+                yield return val;
         }
     }
 
+    /// <summary>
+    ///     The job is taken around <paramref name="mapFn" /> so that the limiter bounds how many run at once.
+    ///     Taking it around the consumption of results instead would leave every <paramref name="mapFn" />
+    ///     already running by the time the first job is acquired. Results are still yielded in input order.
+    /// </summary>
     public static async IAsyncEnumerable<TOut> PMapAll<TIn, TJob, TOut>(this IEnumerable<TIn> coll,
         IResource<TJob> limiter, Func<TIn, Task<TOut>> mapFn)
     {
-        var tasks = coll.Select(mapFn).ToList();
-        foreach (var itm in tasks)
+        var tasks = coll.Select(async x =>
         {
             using var job = await limiter.Begin("", 0, CancellationToken.None);
-            yield return await itm;
-        }
+            return await mapFn(x);
+        }).ToList();
+
+        foreach (var itm in tasks) yield return await itm;
     }
     
     /// <summary>
@@ -176,19 +182,25 @@ public static class AsyncParallelExtensions
         await Task.WhenAll(tasks);
     }
     
+    /// <summary>
+    ///     As <see cref="PMapAll{TIn,TJob,TOut}" />, dropping null results. The job is taken around
+    ///     <paramref name="mapFn" /> so the limiter bounds how many run at once.
+    /// </summary>
     public static async IAsyncEnumerable<TOut> PKeepAll<TIn, TJob, TOut>(this IEnumerable<TIn> coll,
         IResource<TJob> limiter, Func<TIn, Task<TOut>> mapFn)
     where TOut : class
     {
-        var tasks = coll.Select(mapFn).ToList();
-        foreach (var itm in tasks)
+        var tasks = coll.Select(async x =>
         {
             using var job = await limiter.Begin("", 0, CancellationToken.None);
-            var itmA = await itm;
-            if (itmA != default)
-            {
-                yield return await itm;
-            }
+            return await mapFn(x);
+        }).ToList();
+
+        foreach (var itm in tasks)
+        {
+            var val = await itm;
+            if (val != default)
+                yield return val;
         }
     }
 
@@ -235,7 +247,7 @@ public static class AsyncParallelExtensions
             await foreach (var itm in coll)
                 lst.Add(itm);
         else
-            await foreach (var itm in coll.Where(filter))
+            await foreach (var itm in coll.Where(x => filter(x)))
                 lst.Add(itm);
 
         return lst;
@@ -269,12 +281,8 @@ public static class AsyncParallelExtensions
         return dict;
     }
 
-    public static async IAsyncEnumerable<T> Where<T>(this IAsyncEnumerable<T> coll, Predicate<T> p)
-    {
-        await foreach (var itm in coll)
-            if (p(itm))
-                yield return itm;
-    }
+    // Note: Where<T>(IAsyncEnumerable<T>, Predicate<T>) was removed — .NET 10 provides
+    // System.Linq.AsyncEnumerable.Where(IAsyncEnumerable<T>, Func<T,bool>) in the BCL.
 
     public static async IAsyncEnumerable<TOut> SelectAsync<TIn, TOut>(this IEnumerable<TIn> coll,
         Func<TIn, ValueTask<TOut>> fn)
@@ -298,11 +306,6 @@ public static class AsyncParallelExtensions
             yield return await fn(itm);
     }
 
-    public static async IAsyncEnumerable<TOut> SelectMany<TIn, TOut>(this IAsyncEnumerable<TIn> coll,
-        Func<TIn, IEnumerable<TOut>> fn)
-    {
-        await foreach (var itm in coll)
-        foreach (var inner in fn(itm))
-            yield return inner;
-    }
+    // Note: SelectMany<TIn,TOut>(IAsyncEnumerable<TIn>, Func<TIn, IEnumerable<TOut>>) was removed —
+    // .NET 10 provides an equivalent System.Linq.AsyncEnumerable.SelectMany overload in the BCL.
 }

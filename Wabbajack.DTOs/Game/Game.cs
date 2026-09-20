@@ -40,6 +40,7 @@ public enum Game
     [Description("Final Fantasy VII Remake")] FinalFantasy7Remake,
     [Description("Baldur's Gate 3")] BaldursGate3,
     [Description("Starfield")] Starfield,
+    [Description("S.T.A.L.K.E.R. 2: Heart of Chornobyl")] Stalker2,
     [Description("7 Days to Die")] SevenDaysToDie,
     [Description("Oblivion Remastered")] OblivionRemastered,
     [Description("Fallout 76")] Fallout76,

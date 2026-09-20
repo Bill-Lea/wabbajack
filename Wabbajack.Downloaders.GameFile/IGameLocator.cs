@@ -8,4 +8,5 @@ public interface IGameLocator
     public AbsolutePath GameLocation(Game game);
     public bool IsInstalled(Game game);
     public bool TryFindLocation(Game game, out AbsolutePath path);
+    public bool TryGetSteamBuildId(Game game, out string buildId);
 }

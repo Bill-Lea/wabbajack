@@ -9,13 +9,18 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
+
 using DynamicData;
 using DynamicData.Binding;
+
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.WindowsAPICodePack.Dialogs;
+
 using ReactiveUI;
-using ReactiveUI.Fody.Helpers;
+using ReactiveUI.SourceGenerators;
+
 using Wabbajack.Common;
 using Wabbajack.Downloaders.GameFile;
 using Wabbajack.DTOs;
@@ -26,16 +31,20 @@ using Wabbajack.Services.OSIntegrated;
 using Wabbajack.Services.OSIntegrated.Services;
 
 namespace Wabbajack;
-public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
+
+public partial class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
 {
-    public class GameTypeEntry : ReactiveObject
+    public partial class GameTypeEntry : ReactiveObject
     {
-        public GameTypeEntry(GameMetaData gameMetaData, int amount)
+        private readonly ObservableAsPropertyHelper<BitmapImage> _gameIcon;
+
+        public GameTypeEntry(GameMetaData gameMetaData, int amount, IObservable<BitmapImage> gameIcon)
         {
             GameMetaData = gameMetaData;
             IsAllGamesEntry = gameMetaData == null;
             GameIdentifier = IsAllGamesEntry ? ALL_GAME_IDENTIFIER : gameMetaData?.HumanFriendlyGameName;
             Amount = amount;
+            _gameIcon = gameIcon.ToProperty(this, nameof(GameIcon), scheduler: RxApp.MainThreadScheduler);
 
             this.WhenAnyValue(x => x.Amount)
                 .Subscribe(_ => this.RaisePropertyChanged(nameof(FormattedName)));
@@ -43,10 +52,11 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
 
         public bool IsAllGamesEntry { get; set; }
         public GameMetaData GameMetaData { get; private set; }
-        [Reactive] public int Amount { get; set; }
+        public BitmapImage GameIcon => _gameIcon.Value;
+        [Reactive] public partial int Amount { get; set; }
         public string FormattedName => IsAllGamesEntry ? $"{ALL_GAME_IDENTIFIER} ({Amount})" : $"{GameMetaData.HumanFriendlyGameName} ({Amount})";
         public string GameIdentifier { get; private set; }
-        public static GameTypeEntry GetAllGamesEntry(int amount) => new(null, amount);
+        public static GameTypeEntry GetAllGamesEntry(int amount) => new(null, amount, Observable.Empty<BitmapImage>());
     }
 
     public MainWindowVM MWVM { get; }
@@ -59,36 +69,36 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
 
     private const string ALL_GAME_IDENTIFIER = "All games";
 
-    [Reactive] public IValidationResult Error { get; set; }
+    [Reactive] public partial IValidationResult Error { get; set; }
 
-    [Reactive] public string Search { get; set; }
+    [Reactive] public partial string Search { get; set; }
 
-    [Reactive] public bool OnlyInstalled { get; set; }
+    [Reactive] public partial bool OnlyInstalled { get; set; }
 
-    [Reactive] public bool IncludeNSFW { get; set; }
+    [Reactive] public partial bool IncludeNSFW { get; set; }
 
-    [Reactive] public bool IncludeUnofficial { get; set; }
+    [Reactive] public partial bool IncludeUnofficial { get; set; }
 
-    [Reactive] public bool ExcludeMods { get; set; }
+    [Reactive] public partial bool ExcludeMods { get; set; }
 
-    [Reactive] public string GameType { get; set; } = "All games";
-    [Reactive] public double MinModlistSize { get; set; }
-    [Reactive] public double MaxModlistSize { get; set; }
+    [Reactive] public partial string GameType { get; set; } = "All games";
+    [Reactive] public partial double MinModlistSize { get; set; }
+    [Reactive] public partial double MaxModlistSize { get; set; }
 
     public Dictionary<string, string> CommonlyWrongFormattedTags { get; set; } = new();
-    [Reactive] public HashSet<ModListTag> AllTags { get; set; } = new();
-    [Reactive] public ObservableCollection<ModListTag> HasTags { get; set; } = new();
+    [Reactive] public partial HashSet<ModListTag> AllTags { get; set; } = new();
+    [Reactive] public partial ObservableCollection<ModListTag> HasTags { get; set; } = new();
 
 
-    [Reactive] public HashSet<ModListMod> AllMods { get; set; } = new();
-    [Reactive] public ObservableCollection<ModListMod> HasMods { get; set; } = new();
-    [Reactive] public Dictionary<string, HashSet<string>> ModsPerList { get; set; } = new();
+    [Reactive] public partial HashSet<ModListMod> AllMods { get; set; } = new();
+    [Reactive] public partial ObservableCollection<ModListMod> HasMods { get; set; } = new();
+    [Reactive] public partial Dictionary<string, HashSet<string>> ModsPerList { get; set; } = new();
 
-    [Reactive] public GalleryModListMetadataVM SmallestSizedModlist { get; set; }
-    [Reactive] public GalleryModListMetadataVM LargestSizedModlist { get; set; }
+    [Reactive] public partial GalleryModListMetadataVM SmallestSizedModlist { get; set; }
+    [Reactive] public partial GalleryModListMetadataVM LargestSizedModlist { get; set; }
 
-    [Reactive] public ObservableCollection<GameTypeEntry> AllGameTypeEntries { get; set; } = new();
-    [Reactive] public ObservableCollection<GameTypeEntry> GameTypeEntries { get; set; } = new();
+    [Reactive] public partial ObservableCollection<GameTypeEntry> AllGameTypeEntries { get; set; } = new();
+    [Reactive] public partial ObservableCollection<GameTypeEntry> GameTypeEntries { get; set; } = new();
     private GameTypeEntry _selectedGameTypeEntry = null;
     private bool _updatingGamesToFilter = false;
 
@@ -112,14 +122,15 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
     private readonly SettingsManager _settingsManager;
     private readonly CancellationToken _cancellationToken;
     private readonly IServiceProvider _serviceProvider;
+    private readonly GameIconCache _gameIcons;
 
     private readonly SemaphoreSlim _loadModListsGate = new(1, 1);
     private Task? _loadModListsTask;
     private readonly TaskCompletionSource<bool> _galleryLoadedTcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    [Reactive] public bool IsResolvingProtocol { get; set; }
-    [Reactive] public string ProtocolStatusText { get; set; }
+    [Reactive] public partial bool IsResolvingProtocol { get; set; }
+    [Reactive] public partial string ProtocolStatusText { get; set; }
 
     private string? _protocolInFlightNamespacedName;
 
@@ -129,7 +140,8 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
     public ICommand LoadLocalFileCommand { get; set; }
 
     public ModListGalleryVM(ILogger<ModListGalleryVM> logger, Client wjClient, GameLocator locator,
-        SettingsManager settingsManager, ModListDownloadMaintainer maintainer, ModListUpdateService updateService, CancellationToken cancellationToken, IServiceProvider serviceProvider)
+        SettingsManager settingsManager, ModListDownloadMaintainer maintainer, ModListUpdateService updateService, CancellationToken cancellationToken, IServiceProvider serviceProvider,
+        GameIconCache gameIcons)
         : base(logger)
     {
         var searchThrottle = TimeSpan.FromSeconds(0.35);
@@ -141,6 +153,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
         _settingsManager = settingsManager;
         _cancellationToken = cancellationToken;
         _serviceProvider = serviceProvider;
+        _gameIcons = gameIcons;
 
         LocalFilePicker = new FilePickerVM(this);
         LocalFilePicker.ExistCheckOption = FilePickerVM.CheckOptions.On;
@@ -150,7 +163,8 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
             new CommonFileDialogFilter("Wabbajack Modlist", "*" + Ext.Wabbajack),
         });
 
-        ResetFiltersCommand = ReactiveCommand.Create(() => {
+        ResetFiltersCommand = ReactiveCommand.Create(() =>
+        {
             OnlyInstalled = false;
             IncludeNSFW = false;
             IncludeUnofficial = false;
@@ -174,7 +188,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
         this.WhenActivated(disposables =>
         {
             EnsureGalleryLoadedAsync().FireAndForget();
-            
+
             if (!IsSettingsLoaded)
                 LoadSettings().FireAndForget();
 
@@ -282,7 +296,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
                 .StartWith(HasTags)
                 .Select<ObservableCollection<ModListTag>, Func<GalleryModListMetadataVM, bool>>(filteredTags =>
                 {
-                    if(!filteredTags?.Any() ?? true) return _ => true;
+                    if (!filteredTags?.Any() ?? true) return _ => true;
 
                     return item => filteredTags.All(tag => item.Metadata.Tags.Contains(tag.Name));
                 });
@@ -354,11 +368,10 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
             var modsPerList = ModsPerList;
 
             var filteredItems = _modLists.Items
-                .AsParallel()
-                .Where(item => 
+                .Where(item =>
                 {
                     // Search
-                    if (!string.IsNullOrWhiteSpace(search) && 
+                    if (!string.IsNullOrWhiteSpace(search) &&
                         !item.Metadata.Title.ContainsCaseInsensitive(search) &&
                         !item.Metadata.Description.ContainsCaseInsensitive(search) &&
                         !item.Metadata.Tags.Contains(search))
@@ -377,7 +390,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
                         return false;
 
                     // Size
-                    if (item.Metadata.DownloadMetadata.TotalSize < minModlistSize || 
+                    if (item.Metadata.DownloadMetadata.TotalSize < minModlistSize ||
                         item.Metadata.DownloadMetadata.TotalSize > maxModlistSize)
                         return false;
 
@@ -429,7 +442,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
 
             // Synchronize GameTypeEntries to only show those with Amount > 0
             var toShow = AllGameTypeEntries.Where(e => e.IsAllGamesEntry || e.Amount > 0).ToList();
-        
+
             // Update GameTypeEntries collection while preserving selection
             var currentEntries = GameTypeEntries.ToList();
             if (!currentEntries.SequenceEqual(toShow))
@@ -437,7 +450,7 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
                 GameTypeEntries.Clear();
                 foreach (var entry in toShow)
                     GameTypeEntries.Add(entry);
-            
+
                 // Re-select if possible
                 if (selectedIdentifier == null) return;
                 var match = GameTypeEntries.FirstOrDefault(e => e.GameIdentifier == selectedIdentifier);
@@ -883,46 +896,15 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
         using var ll = LoadingLock.WithLoading();
         try
         {
-            var allowedTags = await _wjClient.LoadAllowedTags();
-            var tagMappings = await _wjClient.LoadTagMappings();
+            var snapshot = await Task.Run(LoadGallerySnapshot, _cancellationToken);
 
-            AllTags = allowedTags.Select(t => new ModListTag(t))
-                .OrderBy(t => t.Name)
-                .Prepend(new ModListTag("NSFW"))
-                .Prepend(new ModListTag("Featured"))
-                .Prepend(new ModListTag("Unavailable"))
-                .ToHashSet();
-            var searchIndex = await _wjClient.LoadSearchIndex();
-            ModsPerList = searchIndex.ModsPerList;
-            AllMods = searchIndex.AllMods.Select(mod => new ModListMod(mod)).ToHashSet();
-            var modLists = await _wjClient.LoadLists();
-            var modlistSummaries = (await _wjClient.GetListStatuses()).ToDictionary(summary => summary.MachineURL);
-            foreach (var modlist in modLists)
-            {
-                var modlistTags = new List<string>();
-                foreach(var tag in modlist.Tags)
-                {
-                    string? allowedTag = null;
-                    tagMappings.TryGetValue(tag, out allowedTag);
-
-                    if (allowedTags.TryGetValue(tag, out allowedTag))
-                        modlistTags.Add(allowedTag);
-                }
-                if (modlist.NSFW) modlistTags.Insert(0, "NSFW");
-                if (modlist.Official) modlistTags.Insert(0, "Featured");
-                if ((modlist.ValidationSummary?.HasFailures ?? false) || modlist.ForceDown) modlistTags.Insert(0, "Unavailable");
-
-                modlist.Tags = modlistTags;
-            }
-
-            var httpClient = _serviceProvider.GetRequiredService<HttpClient>();
-            var cacheManager = _serviceProvider.GetRequiredService<ImageCacheManager>();
+            AllTags = snapshot.AllTags;
+            ModsPerList = snapshot.ModsPerList;
+            AllMods = snapshot.AllMods;
             _modLists.Edit(e =>
             {
                 e.Clear();
-                e.AddOrUpdate(modLists.Select(m =>
-                    new GalleryModListMetadataVM(_logger, this, m, _maintainer, _updateService, modlistSummaries.TryGetValue(m.Links.MachineURL, out var summary) ? summary : null, _wjClient, _cancellationToken,
-                        httpClient, cacheManager)));
+                e.AddOrUpdate(snapshot.ModLists);
             });
             LoadGameTypeEntries();
             DetermineListSizeRange();
@@ -936,11 +918,60 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
         }
     }
 
+    private sealed record GallerySnapshot(
+        HashSet<ModListTag> AllTags,
+        HashSet<ModListMod> AllMods,
+        Dictionary<string, HashSet<string>> ModsPerList,
+        List<GalleryModListMetadataVM> ModLists);
+
+    private async Task<GallerySnapshot> LoadGallerySnapshot()
+    {
+        var allowedTags = await _wjClient.LoadAllowedTags();
+        var tagMappings = await _wjClient.LoadTagMappings();
+
+        var allTags = allowedTags.Select(t => new ModListTag(t))
+            .OrderBy(t => t.Name)
+            .Prepend(new ModListTag("NSFW"))
+            .Prepend(new ModListTag("Featured"))
+            .Prepend(new ModListTag("Unavailable"))
+            .ToHashSet();
+        var searchIndex = await _wjClient.LoadSearchIndex();
+        var allMods = searchIndex.AllMods.Select(mod => new ModListMod(mod)).ToHashSet();
+        var modLists = await _wjClient.LoadLists();
+        var modlistSummaries = (await _wjClient.GetListStatuses()).ToDictionary(summary => summary.MachineURL);
+        foreach (var modlist in modLists)
+        {
+            var modlistTags = new List<string>();
+            foreach (var tag in modlist.Tags)
+            {
+                string? allowedTag = null;
+                tagMappings.TryGetValue(tag, out allowedTag);
+
+                if (allowedTags.TryGetValue(tag, out allowedTag))
+                    modlistTags.Add(allowedTag);
+            }
+            if (modlist.NSFW) modlistTags.Insert(0, "NSFW");
+            if (modlist.Official) modlistTags.Insert(0, "Featured");
+            if ((modlist.ValidationSummary?.HasFailures ?? false) || modlist.ForceDown) modlistTags.Insert(0, "Unavailable");
+
+            modlist.Tags = modlistTags;
+        }
+
+        var httpClient = _serviceProvider.GetRequiredService<HttpClient>();
+        var cacheManager = _serviceProvider.GetRequiredService<ImageCacheManager>();
+        var modListViewModels = modLists.Select(m =>
+                new GalleryModListMetadataVM(_logger, this, m, _maintainer, modlistSummaries.TryGetValue(m.Links.MachineURL, out var summary) ? summary : null, _wjClient, _cancellationToken,
+                    httpClient, cacheManager, _gameIcons))
+            .ToList();
+
+        return new GallerySnapshot(allTags, allMods, searchIndex.ModsPerList, modListViewModels);
+    }
+
     private void DetermineListSizeRange()
     {
         SmallestSizedModlist = null;
         LargestSizedModlist = null;
-        foreach(var item in _modLists.Items)
+        foreach (var item in _modLists.Items)
         {
             if (SmallestSizedModlist == null) SmallestSizedModlist = item;
             if (LargestSizedModlist == null) LargestSizedModlist = item;
@@ -961,7 +992,11 @@ public class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
     {
         var entries = _modLists.Items.Select(m => m.Metadata)
             .GroupBy(m => m.Game)
-            .Select(g => new GameTypeEntry(g.Key.MetaData(), g.Count()))
+            .Select(g =>
+            {
+                var gameMetaData = g.Key.MetaData();
+                return new GameTypeEntry(gameMetaData, g.Count(), _gameIcons.Get(gameMetaData.IconSource));
+            })
             .OrderBy(gte => gte.GameMetaData.HumanFriendlyGameName)
             .Prepend(GameTypeEntry.GetAllGamesEntry(_modLists.Count))
             .ToList();

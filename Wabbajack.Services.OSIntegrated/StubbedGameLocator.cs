@@ -31,4 +31,9 @@ public class StubbedGameLocator : IGameLocator
         path = _location.Path;
         return true;
     }
+    public bool TryGetSteamBuildId(Game game, out string buildId)
+    {
+        buildId = string.Empty;
+        return false;
+    }
 }

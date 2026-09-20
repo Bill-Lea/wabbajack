@@ -28,6 +28,9 @@ using Wabbajack.DTOs.Interventions;
 using Wabbajack.Interventions;
 using Wabbajack.LoginManagers;
 using Wabbajack.Models;
+using Wabbajack.Networking.Bethesda;
+using Wabbajack.Networking.Bethesda.Steam;
+using Wabbajack.Networking.Steam;
 using Wabbajack.Paths;
 using Wabbajack.Paths.IO;
 using Wabbajack.Services.OSIntegrated;
@@ -308,7 +311,7 @@ public partial class App
                 CreateNoWindow = true
             });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
         }
     }
@@ -431,14 +434,28 @@ public partial class App
         services.AddOSIntegrated(o =>
             o.ModListsDownloadLocationOverride = LauncherUpdater.CommonFolder.Value.Combine("downloaded_mod_lists"));
 
+        // Registered before AddSteam so it wins over the intervention-based default, which raises a
+        // GetAuthCode intervention that IUserInterventionHandler here - the throwing one - would take a
+        // login down over. Everything else AddSteam brings is a TryAdd and is left alone.
+        services.AddSingleton<SteamGuardPrompt>();
+        services.AddSingleton<ISteamGuardPrompt>(s => s.GetRequiredService<SteamGuardPrompt>());
+        services.AddSteam();
+
+        // The second game file source, behind the same IGameFileRestorer as Steam's and asked after it.
+        // Steam's depots carry the game, the Creation Kit and four Anniversary Edition Creations; the other
+        // seventy are a runtime download from Bethesda, fetched with a ticket from the Steam client the user
+        // is already running rather than with a Wabbajack Steam login.
+        services.AddBethesdaCreations();
+        services.AddSteamAppTicket();
+
         // Orc.FileAssociation
         services.AddSingleton<IApplicationRegistrationService>(new ApplicationRegistrationService());
         services.AddSingleton<FileAssociationSelfHealService>();
 
         // Singletons
-        services.AddSingleton<CefService>();
-        services.AddSingleton<IUserInterventionHandler, UserInterventionHandler>();
+        services.AddSingleton<IUserInterventionHandler, ThrowingUserInterventionHandler>();
         services.AddSingleton<ImageCacheManager>();
+        services.AddSingleton<GameIconCache>();
         services.AddSingleton<SystemParametersConstructor>();
         services.AddSingleton<LauncherUpdater>();
         services.AddSingleton<ResourceMonitor>();
@@ -462,28 +479,21 @@ public partial class App
         services.AddTransient<CompilerMainVM>();
         services.AddTransient<InstallationVM>();
         services.AddTransient<SettingsVM>();
-        services.AddTransient<WebBrowserVM>();
         services.AddTransient<InfoVM>();
         services.AddTransient<ModListDetailsVM>();
         services.AddTransient<FileUploadVM>();
-        services.AddTransient<MegaLoginVM>();
         services.AddTransient<AboutVM>();
 
         // Login Handlers
-        services.AddTransient<VectorPlexusLoginHandler>();
         services.AddTransient<NexusLoginHandler>();
-        services.AddTransient<LoversLabLoginHandler>();
+
+        // The Steam login pane, which both preflight and the Logins tile put in front of the user. Transient:
+        // each one drives a single login attempt and is thrown away with it.
+        services.AddTransient<SteamLoginVM>();
 
         // Login Managers
-
-        //Disabled LL because it is currently not used and broken due to the way LL butchers their API
-        //services.AddAllSingleton<INeedsLogin, LoversLabLoginManager>();
         services.AddAllSingleton<INeedsLogin, NexusLoginManager>();
-        services.AddAllSingleton<INeedsLogin, MegaLoginManager>();
-        //Disabled VP due to frequent login issues & because the only file that really got downloaded there has a mirror
-        //services.AddAllSingleton<INeedsLogin, VectorPlexusLoginManager>();
-        services.AddSingleton<ManualDownloadHandler>();
-        services.AddSingleton<ManualBrowserDownloadHandler>();
+        services.AddAllSingleton<INeedsLogin, SteamLoginManager>();
         services.AddSingleton<NexusCollectionDownloader>();
         // Verbs
         services.AddSingleton<CommandLineBuilder>();

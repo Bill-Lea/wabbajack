@@ -5,13 +5,15 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using CG.Web.MegaApiClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Octokit;
 using Wabbajack.CLI.Builder;
 using Wabbajack.DTOs.Interventions;
+using Wabbajack.Networking.Bethesda;
+using Wabbajack.Networking.Bethesda.Steam;
 using Wabbajack.Networking.Http;
+using Wabbajack.Networking.Steam;
 using Wabbajack.Paths.IO;
 using Wabbajack.Server.Lib;
 using Wabbajack.Services.OSIntegrated;
@@ -45,13 +47,16 @@ public class CLITestFixture : IDisposable
                 services.AddSingleton<Client>();
                 services.AddSingleton<Networking.WabbajackClientApi.Client>();
                 services.AddSingleton(s => new GitHubClient(new ProductHeaderValue("wabbajack")));
-                services.AddSingleton<MegaApiClient>();
                 services.AddSingleton<IUserInterventionHandler, ThrowingUserInterventionHandler>();
+                services.AddSingleton<ISteamGuardPrompt, ConsoleSteamGuardPrompt>();
                 services.AddOSIntegrated(o =>
                 {
                     o.UseLocalCache = true;
                     o.UseStubbedGameFolders = true;
                 });
+                services.AddSteam();
+                services.AddBethesdaCreations();
+                services.AddSteamAppTicket();
                 services.AddServerLib();
                 services.AddTransient<Context>();
                 services.AddSingleton<CommandLineBuilder>();

@@ -1,5 +1,25 @@
 ### Changelog
 
+#### Version - TBD - TBD
+* Fixed modlist images remaining stale due to not being picked up by the list validation actions
+
+#### Version - 4.2.3.0 - 09/09/2026
+* Added initial suppoprt for STALKER 2 ([@Fluffernuttersandwich](https://github.com/Fluffernuttersandwich)) PR #2963
+  * This doesn't support Gallery Releases yet, due to some external issues.
+* Added Steam Build ID fallback for game version detection ([@Fluffernuttersandwich](https://github.com/Fluffernuttersandwich)) PR #2963
+* Fixed UI Freeze when opening the gallery ([@erdtreefaithful](https://github.com/erdtreefaithful)) #2964
+
+#### Version - 4.2.2.1 - 08/22/2026
+* Added mitigation and retry logic on failing delete attempts ([@EzioTheDeadPoet](https://github.com/EzioTheDeadPoet))
+* Added mitigation logic to BSA building temp file collisions ([@EzioTheDeadPoet](https://github.com/EzioTheDeadPoet))
+
+#### Version - 4.2.2.0 - 08/20/2026
+* Updated to .NET 10 ([@halgari](https://github.com/halgari))
+* Added support for passing .compiler_settings file as CLI for compiling lists ([@nadako](https://github.com/nadako)) PR #2922
+* Fixed a false idendtification of an API limit error in the "self-help" logic ([@januarysnow](https://github.com/januarysnow)) PR #2927
+* Fixed nexusmods collections v3 api changes & keeping description/summary ([@januarysnow](https://github.com/januarysnow)) PR #2950
+* Fixed WJ deleting "profile-specific saves" for games that have saves stored as folders and not files ([@EzioTheDeadPoet](https://github.com/EzioTheDeadPoet)) PR #2952
+
 #### Version - 4.2.1.4 - 4/21/2026
 * HOTFIX: changed REST variable naming for the Nexus API
 

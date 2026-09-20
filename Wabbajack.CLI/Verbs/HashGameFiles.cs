@@ -68,16 +68,37 @@ public class HashGameFiles
         }
 
         var version = "0.0.0.0";
+
         if (gameMeta.MainExecutable == null)
         {
             _logger.LogError("Could not find Main Executable for {Game}", gameEnum);
             return 1;
         }
+
         try
         {
             var mainExe = gameLocation.Combine(gameMeta.MainExecutable);
             var info = FileVersionInfo.GetVersionInfo(mainExe.ToString());
-            version = info.ProductVersion ?? info.FileVersion ?? version;
+
+            var productVersion = info.ProductVersion?.Trim();
+            var fileVersion = info.FileVersion?.Trim();
+
+            // Some Unreal Engine games expose the engine changelist as ProductVersion
+            // instead of an actual game version (for example "UE5-CL-0").
+            var isUnrealEngineVersion =
+                !string.IsNullOrWhiteSpace(productVersion) &&
+                productVersion.StartsWith("UE", StringComparison.OrdinalIgnoreCase) &&
+                productVersion.Contains("-CL-", StringComparison.OrdinalIgnoreCase);
+
+            if (isUnrealEngineVersion &&
+                _gameLocator.TryGetSteamBuildId(gameEnum, out var steamBuildId))
+            {
+                version = steamBuildId;
+            }
+            else
+            {
+                version = productVersion ?? fileVersion ?? version;
+            }
         }
         catch
         {

@@ -265,8 +265,31 @@ public abstract class ACompiler
                         _logger.LogWarning("Main file {file} for {game} does not exist", mainFile, ag);
 
                     var versionInfo = FileVersionInfo.GetVersionInfo(mainFile.ToString());
+                    var gameVersion = versionInfo.FileVersion ?? "0.0.0.0";
 
-                    var files = await _wjClient.GetGameArchives(ag, versionInfo.FileVersion ?? "0.0.0.0");
+                    // Some Unreal Engine games expose the engine changelist as their executable
+                    // version rather than a useful game version. For Steam installs, use the
+                    // Steam build ID as a fallback.
+                    var productVersion = versionInfo.ProductVersion?.Trim();
+
+                    var isUnrealEngineVersion =
+                        !string.IsNullOrWhiteSpace(productVersion) &&
+                        productVersion.StartsWith("UE", StringComparison.OrdinalIgnoreCase) &&
+                        productVersion.Contains("-CL-", StringComparison.OrdinalIgnoreCase);
+
+                    if (isUnrealEngineVersion &&
+                        _locator.TryGetSteamBuildId(ag, out var steamBuildId))
+                    {
+                        _logger.LogInformation(
+                            "Using Steam build ID {BuildId} for {Game} instead of Unreal Engine version {Version}",
+                            steamBuildId,
+                            ag,
+                            productVersion);
+
+                        gameVersion = steamBuildId;
+                    }
+
+                    var files = await _wjClient.GetGameArchives(ag, gameVersion);
                     gameFiles.AddRange(files);
 
                     _logger.LogInformation($"Including {files.Length} stock game files from {ag} as download sources");

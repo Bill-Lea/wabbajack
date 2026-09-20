@@ -15,12 +15,11 @@ using Wabbajack.Downloaders;
 using Wabbajack.Downloaders.GameFile;
 using Wabbajack.Downloaders.VerificationCache;
 using Wabbajack.DTOs;
-using Wabbajack.DTOs.Interventions;
 using Wabbajack.DTOs.JsonConverters;
 using Wabbajack.DTOs.Logins;
 using Wabbajack.Hashing.PHash;
 using Wabbajack.Installer;
-using Wabbajack.Networking.BethesdaNet;
+using Wabbajack.Installer.Preflight;
 using Wabbajack.Networking.Discord;
 using Wabbajack.Networking.Http;
 using Wabbajack.Networking.Http.Interfaces;
@@ -29,13 +28,12 @@ using Wabbajack.Networking.WabbajackClientApi;
 using Wabbajack.Paths;
 using Wabbajack.Paths.IO;
 using Wabbajack.RateLimiter;
+using Wabbajack.Services.OSIntegrated.Preflight;
 using Wabbajack.Services.OSIntegrated.Services;
 using Wabbajack.Services.OSIntegrated.TokenProviders;
 using Wabbajack.VFS;
 using Wabbajack.VFS.Interfaces;
 using Client = Wabbajack.Networking.WabbajackClientApi.Client;
-using shortid;
-using shortid.Configuration;
 
 namespace Wabbajack.Services.OSIntegrated;
 
@@ -56,14 +54,9 @@ public static class ServiceExtensions
         var options = new OSIntegratedOptions();
         cfn?.Invoke(options);
         
-        GenerationOptions shortIdOptions = new(
-            useNumbers: true, 
-            useSpecialCharacters:false, 
-            length: 8);
-
         var tempBase = KnownFolders.EntryPoint.Combine("temp");
         service.AddTransient(s =>
-            new TemporaryFileManager(tempBase.Combine(Environment.ProcessId + "_" + ShortId.Generate(shortIdOptions))));
+            new TemporaryFileManager(tempBase.Combine(Environment.ProcessId + "_" + RandomName.Next(8))));
 
         Task.Run(() => CleanAllTempData(tempBase));
 
@@ -150,9 +143,6 @@ public static class ServiceExtensions
         service.AddAllSingleton<IResource, IResource<IInstaller>>(s =>
             new Resource<IInstaller>("Installer", GetResourceSettings(s, "Installer"), s.GetRequiredService<CancellationToken>()));
 
-        service.AddAllSingleton<IResource, IResource<IUserInterventionHandler>>(s =>
-            new Resource<IUserInterventionHandler>("User Intervention", 1, token: s.GetRequiredService<CancellationToken>()));
-
         service.AddSingleton<LoggingRateLimiterReporter>();
 
         service.AddScoped<Context>();
@@ -167,21 +157,13 @@ public static class ServiceExtensions
 
         service.AddSingleton<Client>();
         service.AddSingleton<WriteOnlyClient>();
-        service.AddBethesdaNet();
 
         // Token Providers
         service.AddAllSingleton<ITokenProvider<NexusOAuthState>, EncryptedJsonTokenProvider<NexusOAuthState>, NexusApiTokenProvider>();
-        service.AddAllSingleton<ITokenProvider<MegaToken>, EncryptedJsonTokenProvider<MegaToken>, MegaTokenProvider>();
-        
-        service.AddAllSingleton<ITokenProvider<BethesdaNetLoginState>, EncryptedJsonTokenProvider<BethesdaNetLoginState>, BethesdaNetTokenProvider>();
-        service
-            .AddAllSingleton<ITokenProvider<LoversLabLoginState>, EncryptedJsonTokenProvider<LoversLabLoginState>,
-                LoversLabTokenProvider>();
-        service
-            .AddAllSingleton<ITokenProvider<VectorPlexusLoginState>, EncryptedJsonTokenProvider<VectorPlexusLoginState>,
-                VectorPlexusTokenProvider>();
 
         service.AddAllSingleton<ITokenProvider<WabbajackApiState>, WabbajackApiTokenProvider>();
+
+        service.AddAllSingleton<ITokenProvider<SteamLoginState>, EncryptedJsonTokenProvider<SteamLoginState>, SteamTokenProvider>();
 
         service
             .AddAllSingleton<ITokenProvider<Dictionary<Channel, DiscordWebHookSetting>>,
@@ -207,6 +189,11 @@ public static class ServiceExtensions
         service.AddScoped<CompilerSettings>();
         service.AddScoped<MO2Compiler>();
         service.AddSingleton<CompilerSettingsInferencer>();
+
+        // Preflight
+        service.AddPreflight();
+        service.AddSingleton<INexusLoginProbe, NexusApiLoginProbe>();
+        service.AddSingleton<IDownloadPolicySource, ClientDownloadPolicySource>();
 
         // Application Info
         var version =

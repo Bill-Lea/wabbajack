@@ -24,7 +24,7 @@ public class GameLocator : IGameLocator
     private readonly OriginHandler? _origin;
     private readonly EADesktopHandler? _eaDesktop;
 
-    private readonly Dictionary<AppId, AbsolutePath> _steamGames = new();
+    private readonly Dictionary<AppId, SteamGame> _steamGames = new();
     private readonly Dictionary<GOGGameId, AbsolutePath> _gogGames = new();
     private readonly Dictionary<EGSGameId, AbsolutePath> _egsGames = new();
     private readonly Dictionary<OriginGameId, AbsolutePath> _originGames = new();
@@ -62,7 +62,33 @@ public class GameLocator : IGameLocator
     {
         try
         {
-            FindStoreGames(_steam, _steamGames, game => (AbsolutePath)game.Path.GetFullPath());
+            var games = _steam.FindAllGamesById(out var errors);
+
+            foreach (var (id, game) in games)
+            {
+                try
+                {
+                    var path = (AbsolutePath)game.Path.GetFullPath();
+
+                    if (!path.DirectoryExists())
+                    {
+                        _logger.LogError("Game does not exist: {Game}", game);
+                        continue;
+                    }
+
+                    _steamGames[id] = game;
+                    _logger.LogInformation("Found {Game}", game);
+                }
+                catch (Exception e)
+                {
+                    _logger.LogError(e, "While locating {Game}", game);
+                }
+            }
+
+            foreach (var error in errors)
+            {
+                _logger.LogError("{Error}", error);
+            }
         }
         catch (Exception e)
         {
@@ -178,7 +204,7 @@ public class GameLocator : IGameLocator
         foreach (var id in metaData.SteamIDs)
         {
             if (!_steamGames.TryGetValue(AppId.From((uint)id), out var found)) continue;
-            path = found;
+            path = (AbsolutePath)found.Path.GetFullPath();
             return true;
         }
 
@@ -211,6 +237,27 @@ public class GameLocator : IGameLocator
         }
 
         path = default;
+        return false;
+    }
+    public bool TryGetSteamBuildId(Game game, out string buildId)
+    {
+        var metaData = game.MetaData();
+
+        foreach (var id in metaData.SteamIDs)
+        {
+            if (!_steamGames.TryGetValue(AppId.From((uint)id), out var steamGame))
+                continue;
+
+            var value = steamGame.AppManifest.BuildId.ToString();
+
+            if (string.IsNullOrWhiteSpace(value) || value == "0")
+                continue;
+
+            buildId = value;
+            return true;
+        }
+
+        buildId = string.Empty;
         return false;
     }
 }

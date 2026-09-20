@@ -1,6 +1,6 @@
 ﻿using DynamicData.Binding;
 using ReactiveUI;
-using ReactiveUI.Fody.Helpers;
+using ReactiveUI.SourceGenerators;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -36,19 +36,19 @@ namespace Wabbajack;
 /// Main View Model for the application.
 /// Keeps track of which sub view is being shown in the window, and has some singleton wiring like WorkQueue and Logging.
 /// </summary>
-public class MainWindowVM : ViewModel
+public partial class MainWindowVM : ViewModel
 {
     private Common.AsyncLock _browserLocker = new();
     public MainWindow MainWindow { get; }
 
     [Reactive]
-    public ViewModel ActivePane { get; private set; }
+    public partial ViewModel ActivePane { get; private set; }
 
     [Reactive]
-    public ViewModel? ActiveFloatingPane { get; private set; } = null;
+    public partial ViewModel? ActiveFloatingPane { get; private set; } = null;
 
     [Reactive]
-    public NavigationVM NavigationVM { get; private set; }
+    public partial NavigationVM NavigationVM { get; private set; }
 
     public ObservableCollectionExtended<IStatusMessage> Log { get; } = new ObservableCollectionExtended<IStatusMessage>();
 
@@ -60,11 +60,9 @@ public class MainWindowVM : ViewModel
     public readonly SettingsVM SettingsPaneVM;
     public readonly ModListGalleryVM GalleryVM;
     public readonly HomeVM HomeVM;
-    public readonly WebBrowserVM WebBrowserVM;
     public readonly ModListDetailsVM ModListDetailsVM;
     public readonly InfoVM InfoVM;
     public readonly FileUploadVM FileUploadVM;
-    public readonly MegaLoginVM MegaLoginVM;
     public readonly UserInterventionHandlers UserInterventionHandlers;
 
     private readonly Client _wjClient;
@@ -84,16 +82,16 @@ public class MainWindowVM : ViewModel
     public string VersionDisplay { get; }
 
     [Reactive]
-    public string ResourceStatus { get; set; }
+    public partial string ResourceStatus { get; set; }
 
     [Reactive]
-    public string WindowTitle { get; set; }
+    public partial string WindowTitle { get; set; }
 
     [Reactive]
-    public bool UpdateAvailable { get; private set; }
+    public partial bool UpdateAvailable { get; private set; }
 
     [Reactive]
-    public bool NavigationVisible { get; private set; } = true;
+    public partial bool NavigationVisible { get; private set; } = true;
 
     private System.IO.Pipes.NamedPipeServerStream? _protocolPipeServer;
     private CancellationTokenSource? _protocolPipeCts;
@@ -101,7 +99,7 @@ public class MainWindowVM : ViewModel
 
     public MainWindowVM(ILogger<MainWindowVM> logger, Client wjClient,
         IServiceProvider serviceProvider, HomeVM homeVM, ModListGalleryVM modListGalleryVM, ResourceMonitor resourceMonitor,
-        InstallationVM installerVM, CompilerHomeVM compilerHomeVM, CompilerDetailsVM compilerDetailsVM, CompilerFileManagerVM compilerFileManagerVM, CompilerMainVM compilerMainVM, SettingsVM settingsVM, WebBrowserVM webBrowserVM, NavigationVM navigationVM, InfoVM infoVM, ModListDetailsVM modlistDetailsVM, FileUploadVM fileUploadVM, MegaLoginVM megaLoginVM, SystemParametersConstructor systemParams, HttpClient httpClient)
+        InstallationVM installerVM, CompilerHomeVM compilerHomeVM, CompilerDetailsVM compilerDetailsVM, CompilerFileManagerVM compilerFileManagerVM, CompilerMainVM compilerMainVM, SettingsVM settingsVM, NavigationVM navigationVM, InfoVM infoVM, ModListDetailsVM modlistDetailsVM, FileUploadVM fileUploadVM, SystemParametersConstructor systemParams, HttpClient httpClient)
     {
         _logger = logger;
         _wjClient = wjClient;
@@ -117,12 +115,10 @@ public class MainWindowVM : ViewModel
         SettingsPaneVM = settingsVM;
         GalleryVM = modListGalleryVM;
         HomeVM = homeVM;
-        WebBrowserVM = webBrowserVM;
         NavigationVM = navigationVM;
         InfoVM = infoVM;
         ModListDetailsVM = modlistDetailsVM;
         FileUploadVM = fileUploadVM;
-        MegaLoginVM = megaLoginVM;
         UserInterventionHandlers = new UserInterventionHandlers(serviceProvider.GetRequiredService<ILogger<UserInterventionHandlers>>(), this);
 
         StartProtocolPipeServer();
@@ -147,6 +143,11 @@ public class MainWindowVM : ViewModel
         MessageBus.Current.Listen<ShowBrowserWindow>()
             .ObserveOnGuiThread()
             .Subscribe(HandleShowBrowserWindow)
+            .DisposeWith(CompositeDisposable);
+
+        MessageBus.Current.Listen<ShowSteamLogin>()
+            .ObserveOnGuiThread()
+            .Subscribe(HandleShowSteamLogin)
             .DisposeWith(CompositeDisposable);
 
         MessageBus.Current.Listen<ShowNavigation>()
@@ -389,20 +390,6 @@ public class MainWindowVM : ViewModel
         ActivePane = objViewModel;
     }
 
-    private void HandleManualDownload(ManualDownload manualDownload)
-    {
-        var handler = _serviceProvider.GetRequiredService<ManualDownloadHandler>();
-        handler.Intervention = manualDownload;
-        //MessageBus.Current.SendMessage(new OpenBrowserTab(handler));
-    }
-
-    private void HandleManualBlobDownload(ManualBrowserDownload manualDownload)
-    {
-        var handler = _serviceProvider.GetRequiredService<ManualBrowserDownloadHandler>();
-        handler.Intervention = manualDownload;
-        //MessageBus.Current.SendMessage(new OpenBrowserTab(handler));
-    }
-
     private async void HandleShowBrowserWindow(ShowBrowserWindow msg)
     {
         using var _ = await _browserLocker.WaitAsync();
@@ -410,6 +397,22 @@ public class MainWindowVM : ViewModel
         ActiveFloatingPane = browserWindow.ViewModel = msg.ViewModel;
         browserWindow.DataContext = ActiveFloatingPane;
         await browserWindow.ViewModel.RunBrowserOperation();
+    }
+
+    /// <summary>
+    ///     Shows the Steam login pane until it has an answer, then takes it back down. The pane belongs to
+    ///     whoever asked for it - preflight, or the Logins tile - and they are the ones awaiting its result,
+    ///     so nothing is disposed here; the pane is only cleared if it is still the one on screen, since the
+    ///     user may have moved on to something else in the meantime.
+    /// </summary>
+    private async void HandleShowSteamLogin(ShowSteamLogin msg)
+    {
+        ActiveFloatingPane = msg.ViewModel;
+        msg.ViewModel.Start();
+
+        await msg.ViewModel.Result;
+
+        if (ReferenceEquals(ActiveFloatingPane, msg.ViewModel)) ActiveFloatingPane = null;
     }
 
     private void HandleNavigateTo(ScreenType s)
@@ -435,7 +438,6 @@ public class MainWindowVM : ViewModel
             FloatingScreenType.None => null,
             FloatingScreenType.ModListDetails => ModListDetailsVM,
             FloatingScreenType.FileUpload => FileUploadVM,
-            FloatingScreenType.MegaLogin => MegaLoginVM,
             _ => ActiveFloatingPane
         };
     }
@@ -467,12 +469,15 @@ public class MainWindowVM : ViewModel
         var endTime = DateTime.Now.Add(timeout);
         var cancellationTokenSource = _serviceProvider.GetRequiredService<CancellationTokenSource>();
         cancellationTokenSource.Cancel();
+        InstallerVM.CancelPreflightForShutdown();
 
-        bool IsInstalling() => InstallerVM.InstallState is InstallState.Installing;
+        bool IsInstalling() => InstallerVM.InstallState is InstallState.Installing or InstallState.Preflight;
 
+        // Polled often enough that a preflight, which usually has nothing left to unwind, does not hold the
+        // process open for a whole tick after the window has gone.
         while (DateTime.Now < endTime && IsInstalling())
         {
-            Thread.Sleep(TimeSpan.FromSeconds(1));
+            Thread.Sleep(TimeSpan.FromMilliseconds(100));
         }
     }
 

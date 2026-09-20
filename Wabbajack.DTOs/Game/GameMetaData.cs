@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices.JavaScript;
 using Wabbajack.Paths;
 
@@ -14,12 +15,37 @@ public class GameMetaData
 
     public string? NexusName { get; internal init; }
 
+    /// <summary>
+    ///     The game's address on Nexus Mods: the segment in <c>https://www.nexusmods.com/{domain}/mods/{id}</c>.
+    ///     <see cref="NexusName" /> where the registry records one, and where it does not - Terraria and
+    ///     Karryn's Prison are the only two - the game's own name stripped to letters and digits and
+    ///     lowercased, which is how Nexus spells both of those. Never empty, so nothing builds a
+    ///     <c>//mods/</c> URL with no domain in it, which resolves to nothing.
+    /// </summary>
+    public string NexusDomain => string.IsNullOrWhiteSpace(NexusName)
+        ? new string(Game.ToString().Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant()
+        : NexusName;
+
     // Nexus DB id for the game, used in some specific situations
     public long NexusGameId { get; internal init; }
     public string? MO2Name { get; internal init; }
 
     // to get steam ids: https://steamdb.info
     public int[] SteamIDs { get; internal init; } = Array.Empty<int>();
+
+    /// <summary>
+    ///     Steam apps that are not the game but install their files into the game's own folder. The Creation
+    ///     Kit is what this exists for: Steam gives it its own app id and its own depots, while its
+    ///     <c>installdir</c> names the game, so <c>CreationKit.exe</c> and <c>Data\Scripts.zip</c> land
+    ///     beside <c>SkyrimSE.exe</c> and a modlist records them as the game's own files, because that is
+    ///     where they are. Nothing but the depot they have to come from distinguishes them.
+    ///     <para>
+    ///         These are never used to locate an install - the tool has no executable of its own worth
+    ///         finding and shares the game's directory - so they stay out of <see cref="SteamIDs" />, which
+    ///         <c>GameLocator</c> walks. They only answer "where else could this file be fetched from".
+    ///     </para>
+    /// </summary>
+    public int[] SteamToolIDs { get; internal init; } = Array.Empty<int>();
 
     // to get gog ids: https://www.gogdb.org
     public long[] GOGIDs { get; internal init; } = Array.Empty<long>();

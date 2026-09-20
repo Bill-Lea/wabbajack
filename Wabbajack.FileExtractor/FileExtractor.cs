@@ -1,5 +1,6 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -39,6 +40,13 @@ public class FileExtractor
     private static readonly Extension FOMODExtension = new(".fomod");
 
     private static readonly Extension BSAExtension = new(".bsa");
+
+    /// <summary>
+    ///     Enough of 7-Zip's output to explain a failure, without letting a noisy archive fill a log.
+    /// </summary>
+    private const int MaxCapturedDiagnosticLines = 20;
+
+    private const int MaxReportedFileNames = 20;
 
     public static readonly HashSet<Extension> ExtractableExtensions = new()
     {
@@ -220,9 +228,15 @@ public class FileExtractor
 
         var results = new Dictionary<RelativePath, T>();
 
-        omod.ExtractFilesParallel(dest.Path.ToString(), 4, cancellationToken: token);
-        if (omod.HasEntryFile(OMODEntryFileType.PluginsCRC))
-            omod.ExtractFiles(false, dest.Path.ToString());
+        // ExtractFilesParallel runs its own threads, so it is held under the limiter rather than left to run
+        // once per concurrent OMOD. Released before the mapfn loop below, which can recurse into
+        // GatheringExtract for a nested archive.
+        using (var job = await _limiter.Begin($"Extracting {tmpFile.Path.FileName}", 0, token))
+        {
+            omod.ExtractFilesParallel(dest.Path.ToString(), 4, cancellationToken: token);
+            if (omod.HasEntryFile(OMODEntryFileType.PluginsCRC))
+                omod.ExtractFiles(false, dest.Path.ToString());
+        }
 
         var files = omod.GetDataFiles();
         if (omod.HasEntryFile(OMODEntryFileType.PluginsCRC))
@@ -256,12 +270,64 @@ public class FileExtractor
             if (!shouldExtract(entry.Path))
                 continue;
 
-            var result = await mapFn(entry.Path, new ExtractedMemoryFile(await entry.GetStreamFactory(token)));
+            // GetStreamFactory reads the whole entry into memory, so it is held under the limiter to bound
+            // how many entries are materialized at once. The job is released before mapFn, which can recurse
+            // into GatheringExtract for a nested archive and would otherwise deadlock on this same resource.
+            IStreamFactory entryStream;
+            using (var job = await _limiter.Begin($"Extracting {entry.Path}", 0, token))
+            {
+                entryStream = await entry.GetStreamFactory(token);
+            }
+
+            var result = await mapFn(entry.Path, new ExtractedMemoryFile(entryStream));
             results.Add(entry.Path, result);
         }
         
         _logger.LogInformation("Finished extracting {Name}", sFn.Name);
         return results;
+    }
+
+    /// <summary>
+    ///     Describes an extraction that produced the wrong number of files, including what 7-Zip said about
+    ///     it. A count on its own cannot distinguish a damaged archive from an entry name that failed to
+    ///     match, and the two need different fixes.
+    /// </summary>
+    private static string BuildExtractionFailureReport(IStreamFactory sf, AbsolutePath source, int exitCode,
+        IReadOnlyCollection<RelativePath> requested, IEnumerable<RelativePath> extracted,
+        IEnumerable<string> diagnostics)
+    {
+        var extractedList = extracted.ToList();
+
+        var sb = new StringBuilder();
+        sb.Append($"Sanity check error extracting {sf.Name} - {extractedList.Count} results, expected {requested.Count}");
+        sb.Append($"\n  archive: {source} ({source.Size()} bytes)");
+        sb.Append($"\n  7zip exit code: {exitCode}");
+
+        void AppendPaths(string label, IReadOnlyCollection<RelativePath> paths)
+        {
+            sb.Append($"\n  {label} ({paths.Count}):");
+            foreach (var path in paths.Take(MaxReportedFileNames))
+                sb.Append("\n    ").Append(path);
+            if (paths.Count > MaxReportedFileNames)
+                sb.Append($"\n    ... and {paths.Count - MaxReportedFileNames} more");
+        }
+
+        AppendPaths("requested", requested);
+        AppendPaths("extracted", extractedList);
+
+        var lines = diagnostics.ToList();
+        if (lines.Count > 0)
+        {
+            sb.Append($"\n  7zip output (last {lines.Count} lines):");
+            foreach (var line in lines)
+                sb.Append("\n    ").Append(line);
+        }
+        else
+        {
+            sb.Append("\n  7zip produced no output");
+        }
+
+        return sb.ToString();
     }
 
     public async Task<IDictionary<RelativePath, T>> GatheringExtractWith7Zip<T>(IStreamFactory sf,
@@ -337,6 +403,20 @@ public class FileExtractor
             var lastPercent = 0;
             job.Size = totalSize;
 
+            // 7-Zip explains itself on stdout and stderr, and both were being discarded. Without them a
+            // failure cannot be told apart from a damaged archive, an entry name that did not match, or a
+            // full disk. Kept to a bounded tail so a noisy archive cannot grow this without limit.
+            var diagnostics = new ConcurrentQueue<string>();
+            using var diagnosticsSubscription = process.Output.Subscribe(line =>
+            {
+                if (string.IsNullOrWhiteSpace(line.Line)) return;
+                // Progress lines are just "nn%" and say nothing useful after the fact.
+                if (line.Line.Length > 3 && line.Line[3] == '%') return;
+
+                diagnostics.Enqueue($"{line.Type}: {line.Line.Trim()}");
+                while (diagnostics.Count > MaxCapturedDiagnosticLines) diagnostics.TryDequeue(out _);
+            });
+
             var result = process.Output.Where(d => d.Type == ProcessHelper.StreamType.Output)
                 .ForEachAsync(p =>
                 {
@@ -385,7 +465,12 @@ public class FileExtractor
                 })
                 .Where(d => d.Item1 != default)
                 .ToDictionary(d => d.Item1, d => d.Item2);
-            
+
+            // The same count check GatheringExtract performs, done here so the report can say what 7-Zip
+            // reported and what was asked of it. Reaching the generic check would lose both.
+            if (onlyFiles != null && onlyFiles.Count != results.Count)
+                throw new Exception(BuildExtractionFailureReport(sf, source, exitCode, onlyFiles, results.Keys,
+                    diagnostics));
 
             return results;
         }

@@ -16,7 +16,7 @@ using JetBrains.Annotations;
 using MsBox.Avalonia.Dto;
 using MsBox.Avalonia.Models;
 using ReactiveUI;
-using ReactiveUI.Fody.Helpers;
+using ReactiveUI.SourceGenerators;
 using Wabbajack.Common;
 using Wabbajack.Configuration;
 using Wabbajack.Downloaders.Http;
@@ -29,7 +29,7 @@ using Wabbajack.Paths.IO;
 
 namespace Wabbajack.Launcher.ViewModels;
 
-public class MainWindowViewModel : ViewModelBase
+public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly WebClient _client = new();
     private readonly List<string> _errors = new();
@@ -90,8 +90,8 @@ public class MainWindowViewModel : ViewModelBase
         var tsk = CheckForUpdates();
     }
 
-    [Reactive] ObservableCollection<string> StatusHistory { get; set; } = new ObservableCollection<string>();
-    [Reactive] public string Status { get; set; }
+    [Reactive] public partial ObservableCollection<string> StatusHistory { get; set; } = new ObservableCollection<string>();
+    [Reactive] public partial string Status { get; set; }
 
     /// <summary>
     /// Starts a fresh log for this run, rolling the previous run's log aside. Logging must never
@@ -507,7 +507,7 @@ public class MainWindowViewModel : ViewModelBase
             var data = $"\"{filename}\" %*";
             var file = Path.Combine(Directory.GetCurrentDirectory(), "wabbajack-cli.bat");
             if (File.Exists(file) && await File.ReadAllTextAsync(file) == data) return;
-            var parent = Directory.GetParent(file).FullName;
+            var parent = Directory.GetParent(file)!.FullName;
             if (!Directory.Exists(file))
                 Directory.CreateDirectory(parent);
             await File.WriteAllTextAsync(file, data);
@@ -580,14 +580,14 @@ public class MainWindowViewModel : ViewModelBase
     }
 
 
-    private class Release
+    private partial class Release
     {
         [JsonPropertyName("tag_name")] public string Tag { get; set; }
 
         [JsonPropertyName("assets")] public Asset[] Assets { get; set; }
     }
 
-    private class Asset
+    private partial class Asset
     {
         [JsonPropertyName("browser_download_url")]
         public Uri BrowserDownloadUrl { get; set; }

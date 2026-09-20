@@ -24,36 +24,34 @@ public static class AbsolutePathExtensions
         var path = file.ToNativePath();
         if (File.Exists(path))
         {
-            try
+            var retries = 5;
+            while (true)
             {
-                File.Delete(path);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                var fi = new FileInfo(path);
-                if (fi.IsReadOnly)
+                try
                 {
-                    fi.IsReadOnly = false;
                     File.Delete(path);
+                    break;
                 }
-                else
+                catch (UnauthorizedAccessException)
                 {
+                    var fi = new FileInfo(path);
+                    if (fi.IsReadOnly)
+                    {
+                        fi.IsReadOnly = false;
+                        continue;
+                    }
+
                     throw;
                 }
-            }
-            catch (IOException ex)
-            {
-                if (ex.Message.Contains("because it is being used by another process"))
+                catch (IOException ex) when (ex.Message.Contains("because it is being used by another process"))
                 {
-                    Thread.Sleep(1000);
-                    File.Delete(path);
-                }
-                else
-                {
-                    throw;
+                    if (--retries <= 0)
+                        throw;
+                    Thread.Sleep(5000);
                 }
             }
         }
+
         if (Directory.Exists(path))
             file.DeleteDirectory();
     }
@@ -68,6 +66,23 @@ public static class AbsolutePathExtensions
             throw new FileNotFoundException($"Cannot get size of non-existent file: {nativePath}", nativePath);
 
         return new FileInfo(nativePath).Length;
+    }
+
+    /// <summary>
+    ///     One snapshot of a file's metadata. Existence, both timestamps and the length all come back
+    ///     together; asking for them through <see cref="FileExists" />, <see cref="LastModifiedUtc" />,
+    ///     <see cref="CreatedUtc" /> and <see cref="Size" /> costs one call into the file system each,
+    ///     which adds up over a folder of thousands of files. The snapshot is taken on first use and does
+    ///     not update on its own; call <see cref="FileSystemInfo.Refresh" /> after changing the file, or
+    ///     before reading it again at a point where something else may have.
+    ///     <para>
+    ///         Throws on a default path, where <see cref="FileExists" /> answers false. Check for one first
+    ///         if the caller may hold a path it has not filled in.
+    ///     </para>
+    /// </summary>
+    public static FileInfo Info(this AbsolutePath file)
+    {
+        return new FileInfo(file.ToNativePath());
     }
 
     public static DateTime LastModifiedUtc(this AbsolutePath file)
@@ -201,37 +216,40 @@ public static class AbsolutePathExtensions
         await s.WriteAsync(data, token);
     }
 
+    /// <summary>
+    ///     Moves a file, waiting out the failures that are worth waiting out. See
+    ///     <see cref="IORetry.ClassifyMove" /> for which those are: a file another process holds open — under
+    ///     either of the two codes Windows uses to say so — gets the full ten seconds, and a failure that
+    ///     cannot change, such as a destination that is a directory, a missing source, a full disk or a path
+    ///     the volume will not take, is thrown straight back.
+    /// </summary>
     public static async ValueTask MoveToAsync(this AbsolutePath src, AbsolutePath dest, bool overwrite,
         CancellationToken token)
     {
         // TODO: Make this async
         var srcStr = src.ToString();
         var destStr = dest.ToString();
-        var fi = new FileInfo(srcStr);
-        if (fi.IsReadOnly)
-            fi.IsReadOnly = false;
 
-        var fid = new FileInfo(destStr);
-        if (dest.FileExists() && fid.IsReadOnly)
+        // Best effort: if the flag cannot be read or cleared, the move below throws the error that actually
+        // describes the problem, which is more use to the caller than one thrown by this preparation.
+        TryClearReadOnly(srcStr);
+        TryClearReadOnly(destStr);
+
+        await IORetry.RunAsync(() => File.Move(srcStr, destStr, overwrite),
+            ex => IORetry.ClassifyMove(ex, srcStr, destStr), IORetryPolicy.Default, token);
+    }
+
+    private static void TryClearReadOnly(string path)
+    {
+        try
         {
-            fid.IsReadOnly = false;
+            var info = new FileInfo(path);
+            if (info.Exists && info.IsReadOnly)
+                info.IsReadOnly = false;
         }
-
-        var retries = 0;
-        while (true)
+        catch (Exception)
         {
-            try
-            {
-                File.Move(srcStr, destStr, overwrite);
-                return;
-            }
-            catch (Exception)
-            {
-                if (retries > 10)
-                    throw;
-                retries++;
-                await Task.Delay(TimeSpan.FromSeconds(1), token);
-            }
+            // Deliberately ignored; see MoveToAsync.
         }
     }
 

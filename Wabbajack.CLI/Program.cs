@@ -11,15 +11,17 @@ using NLog.Extensions.Logging;
 using NLog.Targets;
 using Octokit;
 using Wabbajack.DTOs.Interventions;
+using Wabbajack.Networking.Bethesda;
+using Wabbajack.Networking.Bethesda.Steam;
 using Wabbajack.Networking.Http;
 using Wabbajack.Networking.Http.Interfaces;
+using Wabbajack.Networking.Steam;
 using Wabbajack.Paths.IO;
 using Wabbajack.Server.Lib;
 using Wabbajack.Services.OSIntegrated;
 using Wabbajack.VFS;
 using Client = Wabbajack.Networking.GitHub.Client;
 using Wabbajack.CLI.Builder;
-using CG.Web.MegaApiClient;
 
 namespace Wabbajack.CLI;
 
@@ -43,10 +45,21 @@ internal class Program
                 services.AddSingleton<Networking.WabbajackClientApi.Client>();
                 services.AddSingleton(s => new GitHubClient(new ProductHeaderValue("wabbajack")));
                 services.AddSingleton<TemporaryFileManager>();
-                services.AddSingleton<MegaApiClient>();
                 services.AddSingleton<IUserInterventionHandler, ThrowingUserInterventionHandler>();
 
+                // Registered before AddSteam so it wins over the intervention-based default, which the CLI
+                // has no way to answer.
+                services.AddSingleton<ISteamGuardPrompt, ConsoleSteamGuardPrompt>();
+
                 services.AddOSIntegrated();
+                services.AddSteam();
+
+                // The second game file source, behind the same IGameFileRestorer as Steam's and asked after
+                // it. The seventy Anniversary Edition Creations no Steam depot carries come from Bethesda,
+                // fetched with a ticket the running Steam client mints rather than with a Wabbajack login.
+                services.AddBethesdaCreations();
+                services.AddSteamAppTicket();
+
                 services.AddServerLib();
 
 
