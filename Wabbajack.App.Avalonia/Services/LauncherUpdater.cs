@@ -46,6 +46,17 @@ public class LauncherUpdater(ILogger<LauncherUpdater> logger, HttpClient http, C
             return;
         }
 
+        // CUSTOM BUILD: this is a personally maintained install (Bill-Lea fork). The launcher
+        // carries a custom ask-before-update flow and on-disk decision log, and the version
+        // folders are managed by hand. Replacing the launcher with the stock release asset or
+        // pruning "old" version folders would silently destroy that, so both behaviors are
+        // disabled here. Set WABBAJACK_ENABLE_LAUNCHER_UPDATER=1 to restore stock behavior.
+        if (Environment.GetEnvironmentVariable("WABBAJACK_ENABLE_LAUNCHER_UPDATER") != "1")
+        {
+            logger.LogInformation("Custom build: launcher self-update and old-version pruning disabled");
+            return;
+        }
+
         DeleteOldVersions();
         await UpdateLauncher(CancellationToken.None);
     }
