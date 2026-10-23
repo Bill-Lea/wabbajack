@@ -959,13 +959,23 @@ public partial class ModListGalleryVM : BackNavigatingVM, ICanLoadLocalFileVM
 
         var httpClient = _serviceProvider.GetRequiredService<HttpClient>();
         var cacheManager = _serviceProvider.GetRequiredService<ImageCacheManager>();
+
         var modListViewModels = modLists.Select(m =>
-                new GalleryModListMetadataVM(_logger, this, m, _maintainer, modlistSummaries.TryGetValue(m.Links.MachineURL, out var summary) ? summary : null, _wjClient, _cancellationToken,
-                    httpClient, cacheManager, _gameIcons))
+            new GalleryModListMetadataVM(
+                _logger,
+                this,
+                m,
+                _maintainer,
+                _updateService,
+                modlistSummaries.TryGetValue(m.Links.MachineURL, out var summary) ? summary : null,
+                _wjClient,
+                _cancellationToken,
+                httpClient,
+                cacheManager,
+                _gameIcons))
             .ToList();
 
-        return new GallerySnapshot(allTags, allMods, searchIndex.ModsPerList, modListViewModels);
-    }
+        return new GallerySnapshot(allTags, allMods, searchIndex.ModsPerList, modListViewModels);    }
 
     private void DetermineListSizeRange()
     {
